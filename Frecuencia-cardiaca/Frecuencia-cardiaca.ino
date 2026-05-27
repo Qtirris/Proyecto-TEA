@@ -6,29 +6,27 @@
 #include "MAX30105.h"           
 #include "heartRate.h"          
 
-MAX30105 particleSensor;
-
+MAX30105 Sensor_Cardiaco;
 // Configuración de Pines
 int Led_Verde = 5; 
 int Led_Rojo = 4;
+//Variables de promedio
 int Recopilador_HVR[180];
 // Variables de pulso
 unsigned long Tempo_Ultimo_Latido = 0;
 long HVR = 0; 
 float BPM = 0;
 unsigned long Numero_Latido = 0;
-
+bool Esta_Dormido = false
 // Configuración de BLE
 BLEServer *pServer = NULL;
 BLECharacteristic *pCharacteristicTX = NULL; 
 BLECharacteristic *pCharacteristicRX = NULL; 
 bool dispositivoConectado = false;
-
 // UUIDs estándar del servicio UART de Nordic (Compatibles con la App)
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E" 
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E" 
-
 // Callbacks para detectar conexión y desconexión del celular
 class MisCallbacksServidor: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -39,7 +37,6 @@ class MisCallbacksServidor: public BLEServerCallbacks {
       pServer->startAdvertising(); // Reiniciar publicidad para permitir reconexión
     }
 };
-
 // Callbacks para recibir comandos desde el celular (Corregido para nuevas versiones)
 class MisCallbacksRX: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
@@ -57,24 +54,24 @@ class MisCallbacksRX: public BLECharacteristicCallbacks {
       }
     }
 };
-
+//Inicializacion de variables
 void setup() {
   Serial.begin(115200);
-  
+  //Modo de los Pines
   pinMode(Led_Verde, OUTPUT);
-  digitalWrite(Led_Verde, LOW); 
   pinMode(Led_Rojo, OUTPUT);
+  Wire.begin(2, 3); 
+  //Apagar todo
+  digitalWrite(Led_Verde, LOW); 
   digitalWrite(Led_Rojo, LOW); 
 
   while (!Serial) { ; }
   Serial.println("\n--- Iniciando Sistema Transmisor BLE Completo ---");
-
   // 1. Inicializar Bus I2C para el sensor de pulso (Estable a 100kHz para el C3)
   // Si no se detecta, Parpadea el Led_Rojo
-  Wire.begin(2, 3); 
   Wire.setClock(100000); 
 
-  if (!particleSensor.begin(Wire)) { 
+  if (!Sensor_Cardiaco.begin(Wire)) { 
     Serial.println("ERROR: No se encontró el MAX30102.");
     while (1) {
       digitalWrite(Led_Rojo, HIGH); delay(100);
@@ -82,26 +79,21 @@ void setup() {
     }
   }
   Serial.println("-> Sensor MAX30102 detectado.");
-  particleSensor.setup(); 
-  particleSensor.setPulseAmplitudeRed(0x0A); 
-  particleSensor.setPulseAmplitudeIR(0x1F);  
-
+  Sensor_Cardiaco.setup(); 
+  Sensor_Cardiaco.setPulseAmplitudeRed(0x0A); 
+  Sensor_Cardiaco.setPulseAmplitudeIR(0x1F);  
   // 2. Inicializar Bluetooth BLE
   BLEDevice::init("ESP32-C3_HRV"); 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MisCallbacksServidor());
-
   // Crear el servicio UART
   BLEService *pService = pServer->createService(SERVICE_UUID);
-
   // Crear la característica TX (Transmisión hacia el celular)
   pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX,BLECharacteristic::PROPERTY_NOTIFY);
   pCharacteristicTX->addDescriptor(new BLE2902());
-
   // Crear la característica RX (Recepción desde el celular)
   pCharacteristicRX = pService->createCharacteristic(CHARACTERISTIC_UUID_RX,BLECharacteristic::PROPERTY_WRITE);
   pCharacteristicRX->setCallbacks(new MisCallbacksRX()); 
-
   // Arrancar el servicio y empezar a transmitir señal de presencia
   pService->start();
   pServer->getAdvertising()->start();
@@ -109,17 +101,17 @@ void setup() {
 }
 
 void loop() {
-  long irValue = particleSensor.getIR();
-
+  long Valor_Presencia = Sensor_Cardiaco.getIR();
   // Si no hay dedo puesto en el sensor
-  if (irValue < 50000) {
-    digitalWrite(Led_Verde, LOW);
+  if (Valor_Presencia < 50000) {
+    digitalWrite(Led_Rojo, HIGH);
     return; 
   }
 
   // Si detecta un latido
-  if (checkForBeat(irValue) == true) {
-    digitalWrite(Led_Verde, HIGH); // Feedback visual inmediato
+  if (checkForBeat(Valor_Presencia) == true) {
+    digitalWrite(Led_Verde, HIGH); 
+    digitalWrite(Led_Rojo, LOW);
 
     unsigned long Tiempo_Actual = millis();
     HVR = Tiempo_Actual - Tempo_Ultimo_Latido;
@@ -131,18 +123,23 @@ void loop() {
       Numero_Latido++;
 
       // Mostrar en Monitor Serie de la PC
-      Serial.print("<3 Latido #"); Serial.print(Numero_Latido);
-      Serial.print(" | HVR: "); Serial.print(HVR); Serial.print(" ms");
-      Serial.print(" | BPM: "); Serial.println(BPM, 1);
+      Serial.print("<3 Latido #"); 
+      Serial.print(Numero_Latido);
+      Serial.print(" | HVR: "); 
+      Serial.print(HVR); 
+      Serial.print("ms");
+      Serial.print(" | BPM: "); 
+      Serial.println(BPM, 1);
 
-      // --- ENVIAR AL CELULAR POR BLE ---
+      //Enviar al Celular
       if (dispositivoConectado) {
-        String datosEnviar = String(Numero_Latido) + "," + String(HVR) + "," + String(BPM, 1) + "\n";
+        String datosEnviar = String(Numero_Latido) + "||" + String(HVR) + "||" + String(BPM, 1) + "\n";
         
         pCharacteristicTX->setValue((uint8_t*)datosEnviar.c_str(), datosEnviar.length());
         pCharacteristicTX->notify(); 
       }
     }
     digitalWrite(Led_Verde, LOW);
+    digitalWrite(Led_Rojo, HIGH);
   }
 }
