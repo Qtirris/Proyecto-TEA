@@ -51,6 +51,7 @@ void wifiConnect(const char* ssid, const char* pass){ //Toma como parametros el 
   }
   else{
     Serial.println("Error al conectar.");
+    WiFi.disconnect();
   }
   
 }
@@ -73,7 +74,8 @@ void HTTPinit(){
   //Hace la petición y almacena el codigio de respues http
 
   if (httpCode > 0) {//Evita los errores de HTTPClient
-        Serial.printf("httpCode= ", httpCode);
+        Serial.print("httpCode= ");
+        Serial.println(httpCode);
 
         if (httpCode == HTTP_CODE_OK) {
           String respuesta = http.getString();
