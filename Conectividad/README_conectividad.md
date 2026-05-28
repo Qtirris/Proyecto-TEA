@@ -81,4 +81,4 @@ Aca estan cosas a tener en cuenta.
         4xx:    Error del cliente
         5xx:    Error del servidor
 
-    RESIVAR LOS CODIGOS PARA LA LINEA 78 CONEVTIVIDAD
+    RESIVAR LOS CODIGOS PARA LA LINEA 78 CONEVTIVIDAD.INO

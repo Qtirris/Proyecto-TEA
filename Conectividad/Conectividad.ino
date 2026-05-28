@@ -95,7 +95,7 @@ void setup() {
   wifiScan();
   delay(500);
 
-  wifiConnect("A56Prueba","11223345");//Esto es para porbar que se desconecte de la red
+  wifiConnect("A56Prueba","11223345");//Esto es para porbar que se desconecte de la red inicial
   delay(500);
 
   wifiConnect("TATAN_ARDILA","91011814");
