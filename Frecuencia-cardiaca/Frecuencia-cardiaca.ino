@@ -12,6 +12,7 @@ int Led_Verde = 6;
 int Led_Rojo = 8;
 //Variables de promedio
 int Recopilador_HVR[180];
+int Contador_HVR = 0;
 // Variables de pulso
 unsigned long Tempo_Ultimo_Latido = 0;
 long HVR = 0; 
@@ -132,6 +133,20 @@ void loop() {
       Serial.print("ms");
       Serial.print(" | BPM: "); 
       Serial.println(BPM, 1);
+      // Agregar a las listas
+      if (Contador_HVR < 180) {
+        Recopilador_HVR[Numero_Latido-1] = HVR;
+        Contador_HVR++;
+      }
+
+      if (Contador_HVR % 10 == 0) {
+        for (int i = 0; i < Contador_HVR; i++) {
+          Serial.print("|");
+          Serial.print(Recopilador_HVR[i]);
+          Serial.print("|");    
+        }
+        Serial.println("<----- Lista HVR");
+      }
 
       //Enviar al Celular
       if (dispositivoConectado) {
@@ -145,5 +160,4 @@ void loop() {
   else{
     digitalWrite(Led_Verde, LOW);
   }
-}
 }
