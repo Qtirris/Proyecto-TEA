@@ -8,28 +8,17 @@
 
 MAX30105 Sensor_Cardiaco;
 // Configuración de Pines
-<<<<<<< HEAD
-int Led_Verde = 5; 
-int Led_Rojo = 4;
-//Variables de promedio
-int Recopilador_HVR[180];
-=======
 int Led_Verde = 6; 
 int Led_Rojo = 8;
 //Variables de promedio
 int Recopilador_HVR[180];
 int Contador_HVR = 0;
->>>>>>> test
 // Variables de pulso
 unsigned long Tempo_Ultimo_Latido = 0;
 long HVR = 0; 
 float BPM = 0;
 unsigned long Numero_Latido = 0;
-<<<<<<< HEAD
-bool Esta_Dormido = false
-=======
 bool Esta_Dormido = false;
->>>>>>> test
 // Configuración de BLE
 BLEServer *pServer = NULL;
 BLECharacteristic *pCharacteristicTX = NULL; 
@@ -72,11 +61,7 @@ void setup() {
   //Modo de los Pines
   pinMode(Led_Verde, OUTPUT);
   pinMode(Led_Rojo, OUTPUT);
-<<<<<<< HEAD
-  Wire.begin(2, 3); 
-=======
   Wire.begin(1, 0); //SDA, SLC
->>>>>>> test
   //Apagar todo
   digitalWrite(Led_Verde, LOW); 
   digitalWrite(Led_Rojo, LOW); 
@@ -148,9 +133,7 @@ void loop() {
       Serial.print("ms");
       Serial.print(" | BPM: "); 
       Serial.println(BPM, 1);
-<<<<<<< HEAD
 
-=======
       // Agregar a las listas
       if (Contador_HVR < 180) {
         Recopilador_HVR[Numero_Latido-1] = HVR;
@@ -166,7 +149,6 @@ void loop() {
         Serial.println("<----- Lista HVR");
       }
 
->>>>>>> test
       //Enviar al Celular
       if (dispositivoConectado) {
         String datosEnviar = String(Numero_Latido) + "||" + String(HVR) + "||" + String(BPM, 1) + "\n";
@@ -175,14 +157,8 @@ void loop() {
         pCharacteristicTX->notify(); 
       }
     }
-<<<<<<< HEAD
-    digitalWrite(Led_Verde, LOW);
-    digitalWrite(Led_Rojo, HIGH);
-  }
-=======
   }
   else{
     digitalWrite(Led_Verde, LOW);
   }
->>>>>>> test
 }
