@@ -5,20 +5,38 @@
 #include <BLE2902.h>
 #include "MAX30105.h"           
 #include "heartRate.h"          
+#include <vector>
 
 MAX30105 Sensor_Cardiaco;
 // Configuración de Pines
 int Led_Verde = 6; 
 int Led_Rojo = 8;
-//Variables de promedio
+//Variables de HVR
 int Recopilador_HVR[180];
+float Diferencia_HVR[179];
 int Contador_HVR = 0;
+bool Datos_De_Hoy = false;
+float Promedio_HVR = 0;
+float Promedio_Basal_HVR;
 // Variables de pulso
 unsigned long Tempo_Ultimo_Latido = 0;
 long HVR = 0; 
 float BPM = 0;
 unsigned long Numero_Latido = 0;
+//Variables de deteccion del sueño
+int Picos_De_Frecuencia = 0;
+std::vector<int> Recopilador_Cardiaco;
+const unsigned long Tiempo_Esperando_Sueño = 900000;
+const unsigned long Tiempo_Capturando_Sueño = 300000;
+unsigned long Tiempo_Comparacion_Sueño = 0;
 bool Esta_Dormido = false;
+enum Estado_Datos_Dormido {
+  Esperando_15_Min,
+  Capturando_5_Min
+};
+Estado_Datos_Dormido Estado_Dato_Sueño = Capturando_5_Min;
+bool Desactivar_Promedio_Sueño = true;
+float Promedio_Cardiaco_Sueño = 0;
 // Configuración de BLE
 BLEServer *pServer = NULL;
 BLECharacteristic *pCharacteristicTX = NULL; 
@@ -119,6 +137,7 @@ void loop() {
     unsigned long Tiempo_Actual = millis();
     HVR = Tiempo_Actual - Tempo_Ultimo_Latido;
     Tempo_Ultimo_Latido = Tiempo_Actual;
+    unsigned long Tiempo_Actual_Sueño = millis();
 
     // Filtro básico para descartar ruido (Frecuencias cardíacas entre 46 y 150 BPM)
     if (HVR > 400 && HVR < 1300) {
@@ -133,22 +152,29 @@ void loop() {
       Serial.print("ms");
       Serial.print(" | BPM: "); 
       Serial.println(BPM, 1);
-
       // Agregar a las listas
       if (Contador_HVR < 180) {
         Recopilador_HVR[Numero_Latido-1] = HVR;
         Contador_HVR++;
       }
-
-      if (Contador_HVR % 10 == 0) {
-        for (int i = 0; i < Contador_HVR; i++) {
-          Serial.print("|");
-          Serial.print(Recopilador_HVR[i]);
-          Serial.print("|");    
-        }
-        Serial.println("<----- Lista HVR");
+      //Cada 20 min se verifica si el usuario se durmio
+      switch (Estado_Dato_Sueño) {
+        case Esperando_15_Min:
+          if(Tiempo_Actual_Sueño - Tiempo_Comparacion_Sueño >= Tiempo_Esperando_Sueño){
+            Recopilador_Cardiaco.clear();
+            Estado_Dato_Sueño = Capturando_5_Min;
+            Tiempo_Comparacion_Sueño = Tiempo_Actual;
+          }
+        break;
+        case Capturando_5_Min:
+          if(Tiempo_Actual_Sueño - Tiempo_Esperando_Sueño >= Tiempo_Capturando_Sueño)
+          {
+            Estado_Dato_Sueño = Esperando_15_Min;
+            Tiempo_Comparacion_Sueño = Tiempo_Actual;
+            Desactivar_Promedio_Sueño = false;
+          }
+          Recopilador_Cardiaco.push_back(BPM);
       }
-
       //Enviar al Celular
       if (dispositivoConectado) {
         String datosEnviar = String(Numero_Latido) + "||" + String(HVR) + "||" + String(BPM, 1) + "\n";
@@ -156,6 +182,32 @@ void loop() {
         pCharacteristicTX->setValue((uint8_t*)datosEnviar.c_str(), datosEnviar.length());
         pCharacteristicTX->notify(); 
       }
+    }
+    if (Contador_HVR >= 180){
+        for (int i = 0; i < Contador_HVR-1; i++) {
+          Diferencia_HVR[i] = Recopilador_HVR[i]-Recopilador_HVR[i+1];
+          Diferencia_HVR[i] = Diferencia_HVR[i] * Diferencia_HVR[i];
+          Diferencia_HVR[i] = sqrt(Diferencia_HVR[i]);
+          Promedio_HVR += Diferencia_HVR[i];
+        }
+        Promedio_HVR /= Contador_HVR-1;
+    }
+    if (Estado_Dato_Sueño == Esperando_15_Min && Desactivar_Promedio_Sueño == false) {
+      for (int i = 0; i <= Recopilador_Cardiaco.size(); i++) {
+        float Ignorar_Picos = Recopilador_Cardiaco[i] - Recopilador_Cardiaco[i-1];
+        Ignorar_Picos = Ignorar_Picos * Ignorar_Picos;
+        Ignorar_Picos = sqrt(Ignorar_Picos);
+        if(Ignorar_Picos > 15){
+          Picos_De_Frecuencia++;
+        }
+        else{
+          Promedio_Cardiaco_Sueño += Recopilador_Cardiaco[i];
+        }
+      }
+      Promedio_Cardiaco_Sueño /= Recopilador_Cardiaco.size() - Picos_De_Frecuencia;
+      Serial.print(Promedio_Cardiaco_Sueño);
+      Serial.println("<------- Promedio Cardiaco Sueño");
+      Desactivar_Promedio_Sueño = true;
     }
   }
   else{
