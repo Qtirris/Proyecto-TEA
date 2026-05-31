@@ -8,12 +8,15 @@
 #include <vector>
 
 MAX30105 Sensor_Cardiaco;
-//Variables de datos
-bool Datos_De_Hoy = false;
+
 // Configuración de Pines
 int Led_Verde = 6; 
 int Led_Rojo = 8;
-//Variables de HVR
+
+// Variables de datos
+bool Datos_De_Hoy = false;
+
+// Variables de HVR
 long HVR = 0; 
 int Recopilador_HVR[180];
 float Diferencia_HVR[179];
@@ -22,12 +25,14 @@ float Promedio_HVR = 0;
 float Promedio_Basal_HVR = 0;
 std::vector<int> Capturar_HVR;
 int Nivel_Superior_HVR = 20;
-//Variables del estres
+
+// Variables del estres
 float Nivel_Estres = 0;
 float Promedio_HVR_Estres = 0;
 int Contador_Estres = 0;
 int Reset_Contador_Estres = 0;
 bool Alerta_Estres = false;
+
 // Variables de pulso
 int Recopilador_BPM[180];
 unsigned long Tempo_Ultimo_Latido = 0;
@@ -41,7 +46,8 @@ std::vector<int> Capturar_BPM;
 bool Alerta_Cardiaca = false;
 int Contador_BMP_Alerta = 0;
 int Reset_Contador_BMP_Alerta = 0;
-//Variables de deteccion del sueño
+
+// Variables de deteccion del sueño
 int Picos_De_Frecuencia = 0;
 std::vector<int> Recopilador_Cardiaco;
 const unsigned long Tiempo_Esperando_Sueño = 900000;
@@ -55,35 +61,33 @@ enum Estado_Datos_Dormido {
 Estado_Datos_Dormido Estado_Dato_Sueño = Capturando_5_Min;
 bool Desactivar_Promedio_Sueño = true;
 float Promedio_Cardiaco_Sueño = 0;
+
 // Configuración de BLE
 BLEServer *pServer = NULL;
 BLECharacteristic *pCharacteristicTX = NULL; 
 BLECharacteristic *pCharacteristicRX = NULL; 
 bool Dispositivo_Conectado = false;
-// UUIDs estándar del servicio UART de Nordic (Compatibles con la App)
+
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E" 
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E" 
-// Callbacks para detectar conexión y desconexión del celular
+
 class MisCallbacksServidor: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       Dispositivo_Conectado = true;
     };
     void onDisconnect(BLEServer* pServer) {
       Dispositivo_Conectado = false;
-      pServer->startAdvertising(); // Reiniciar publicidad para permitir reconexión
+      pServer->startAdvertising(); 
     }
 };
-// Callbacks para recibir comandos desde el celular (Corregido para nuevas versiones)
+
 class MisCallbacksRX: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
       String rxValue = pCharacteristic->getValue(); 
-
       if (rxValue.length() > 0) {
         Serial.print("Dato recibido desde el celular: ");
         Serial.println(rxValue); 
-        
-        // Si se envia la letra 'r' desde la app del celular, reinicia el contador
         if(rxValue[0] == 'r') {
           Numero_Latido = 0;
           Serial.println("Contador de latidos reiniciado por Bluetooth.");
@@ -91,21 +95,20 @@ class MisCallbacksRX: public BLECharacteristicCallbacks {
       }
     }
 };
-//Inicializacion de variables
+
 void setup() {
   Serial.begin(115200);
-  //Modo de los Pines
+  
   pinMode(Led_Verde, OUTPUT);
   pinMode(Led_Rojo, OUTPUT);
-  Wire.begin(1, 0); //SDA, SLC
-  //Apagar todo
+  
+  Wire.begin(1, 0); // SDA, SCL
   digitalWrite(Led_Verde, LOW); 
   digitalWrite(Led_Rojo, LOW); 
 
   while (!Serial) { ; }
   Serial.println("\n--- Iniciando Sistema Transmisor BLE Completo ---");
-  // 1. Inicializar Bus I2C para el sensor de pulso (Estable a 100kHz para el C3)
-  // Si no se detecta, Parpadea el Led_Rojo
+  
   Wire.setClock(100000); 
 
   if (!Sensor_Cardiaco.begin(Wire)) { 
@@ -116,38 +119,49 @@ void setup() {
     }
   }
   Serial.println("-> Sensor MAX30102 detectado.");
-  Sensor_Cardiaco.setup(); 
-  Sensor_Cardiaco.setPulseAmplitudeRed(0x0A); 
-  Sensor_Cardiaco.setPulseAmplitudeIR(0x1F);  
-  // 2. Inicializar Bluetooth BLE
+
+  //CONFIGURACIÓN OPTIMIZADA PARA MUÑECA (BPM + HRV)
+  byte Brillo = 100; // Brillo elevado para penetrar tejido de la muñeca
+  byte Lecturas = 1;   // Sin promediar lecturas para capturar picos reales de HRV
+  byte Modo = 2;         // Modo 2: Rojo + IR
+  int Velocidad_Muestreo = 400;     // Muestreo rápido a 400 Hz para precisión temporal
+  int Ancho_Pulso = 411;     // Ancho de pulso máximo (18 bits de resolución del ADC)
+  int Rango_ADC = 8192;      // Rango del ADC extendido para mitigar saturaciones
+
+  Sensor_Cardiaco.setup(Brillo, Lecturas, Modo, Velocidad_Muestreo, Ancho_Pulso, Rango_ADC); 
+  Serial.println("-> Registro de variables para muñeca configurado.");
+
+  // Inicializar Bluetooth BLE
   BLEDevice::init("ESP32-C3_HRV"); 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MisCallbacksServidor());
-  // Crear el servicio UART
+  
   BLEService *pService = pServer->createService(SERVICE_UUID);
-  // Crear la característica TX (Transmisión hacia el celular)
-  pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX,BLECharacteristic::PROPERTY_NOTIFY);
+  pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
   pCharacteristicTX->addDescriptor(new BLE2902());
-  // Crear la característica RX (Recepción desde el celular)
-  pCharacteristicRX = pService->createCharacteristic(CHARACTERISTIC_UUID_RX,BLECharacteristic::PROPERTY_WRITE);
+  pCharacteristicRX = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
   pCharacteristicRX->setCallbacks(new MisCallbacksRX()); 
-  // Arrancar el servicio y empezar a transmitir señal de presencia
+  
   pService->start();
   pServer->getAdvertising()->start();
   Serial.println("-> Bluetooth BLE (TX/RX) activo. Esperando conexión segura...");
 }
 
 void loop() {
+  // Comprobar constantemente si existen nuevas muestras acumuladas en el buffer de la librería
+  Sensor_Cardiaco.check(); 
+  
   long Valor_Presencia = Sensor_Cardiaco.getIR();
-  // Si no hay dedo puesto en el sensor
+
+  // Si no hay muñeca colocada en el sensor (Lectura baja)
   if (Valor_Presencia < 50000) {
     digitalWrite(Led_Rojo, HIGH);
     return; 
-  }else {
+  } else {
     digitalWrite(Led_Rojo, LOW);
   }
 
-  // Si detecta un latido
+  // Verificar si la lectura corresponde al pico de un latido cardíaco
   if (checkForBeat(Valor_Presencia) == true) {
     digitalWrite(Led_Verde, HIGH); 
     digitalWrite(Led_Rojo, LOW);
@@ -157,12 +171,12 @@ void loop() {
     Tempo_Ultimo_Latido = Tiempo_Actual;
     unsigned long Tiempo_Actual_Sueño = millis();
 
-    // Filtro básico para descartar ruido (Frecuencias cardíacas entre 46 y 150 BPM)
+    // Filtro básico para descartar ruido de lectura (Pulsos entre 46 y 150 BPM)
     if (HVR > 400 && HVR < 1300) {
       BPM = 60000.0 / HVR; 
       Numero_Latido++;
 
-      // Mostrar en Monitor Serie de la PC
+      // Mostrar lecturas en Monitor Serie
       Serial.print("<3 Latido #"); 
       Serial.print(Numero_Latido);
       Serial.print(" | HVR: "); 
@@ -170,7 +184,8 @@ void loop() {
       Serial.print("ms");
       Serial.print(" | BPM: "); 
       Serial.println(BPM, 1);
-      // Agregar a las listas
+
+      // Agregar a las listas de almacenamiento diario si está durmiendo
       if (Contador_HVR < 180 && Esta_Dormido == true) {
         Recopilador_HVR[Contador_HVR] = HVR;
         Contador_HVR++;
@@ -179,26 +194,30 @@ void loop() {
         Recopilador_BPM[Contador_BPM] = BPM;
         Contador_BPM++;
       }
-      //Capturar HVR y medicion del estres
+
+      // Procesamiento de HRV y algoritmos de estrés
       if (Promedio_Basal_HVR != 0) {
         if (Capturar_HVR.size() < 11) { 
           Capturar_HVR.push_back(HVR);
-        }else {
+        } else {
           int Picos_HVR = 0;
-          for (int i = 0; i <= Capturar_HVR.size(); i++) {
+          for (int i = 0; i < Capturar_HVR.size() - 1; i++) {
             Capturar_HVR[i] = Capturar_HVR[i] - Capturar_HVR[i+1];
             Capturar_HVR[i] = Capturar_HVR[i] * Capturar_HVR[i];
             if (!(sqrt(Capturar_HVR[i] > Promedio_Basal_HVR + Nivel_Superior_HVR))) {
               Capturar_HVR[i] = sqrt(Capturar_HVR[i]);
               Promedio_HVR_Estres += Capturar_HVR[i];
-            }else {
+            } else {
               Picos_HVR++;
             }
           }
           Reset_Contador_Estres++;
-          Promedio_HVR_Estres /= Capturar_HVR.size(); - Picos_HVR;
+          if((Capturar_HVR.size() - Picos_HVR) > 0) {
+            Promedio_HVR_Estres /= (Capturar_HVR.size() - Picos_HVR);
+          }
           Capturar_HVR.clear();
         }
+
         int Promediar_Estres = Promedio_HVR_Estres - Promedio_Basal_HVR;
         Promediar_Estres *= Promediar_Estres;
         Promediar_Estres = sqrt(Promediar_Estres);
@@ -216,23 +235,26 @@ void loop() {
           Contador_Estres++;
         }
       }
-      //Capturar BPM
+
+      // Procesamiento de variaciones rápidas de BPM
       if (Promedio_Basal_BPM != 0){
         if (Capturar_BPM.size() < 11) { 
           Capturar_BPM.push_back(BPM);
-        }else {
+        } else {
           int Picos_BPM = 0;
-          for (int i = 0; i <= Capturar_BPM.size(); i++) {
+          for (int i = 1; i < Capturar_BPM.size(); i++) {
             if (sqrt((Capturar_BPM[i] - Capturar_BPM[i-1])*(Capturar_BPM[i] - Capturar_BPM[i-1])) > 40) {
               Picos_BPM++;
-            }
-            else {
+            } else {
               Promedio_BPM_Alerta += Capturar_BPM[i];
             } 
           }
           Reset_Contador_BMP_Alerta++;
-          Promedio_BPM_Alerta /=   Capturar_BPM.size() - Picos_BPM;
+          if((Capturar_BPM.size() - Picos_BPM) > 0) {
+            Promedio_BPM_Alerta /= (Capturar_BPM.size() - Picos_BPM);
+          }
         }
+
         if (Promedio_BPM_Alerta - Promedio_Basal_BPM <= 8) {
           Serial.println("<---- Estado BMP Tranquilo");
         }
@@ -247,7 +269,8 @@ void loop() {
           Contador_BMP_Alerta++;
         }
       }
-      //Cada 20 min se verifica si el usuario se durmio
+
+      // Máquina de estados periódica para el análisis del Sueño
       switch (Estado_Dato_Sueño) {
         case Esperando_15_Min:
           if(Tiempo_Actual_Sueño - Tiempo_Comparacion_Sueño >= Tiempo_Esperando_Sueño){
@@ -257,22 +280,24 @@ void loop() {
           }
         break;
         case Capturando_5_Min:
-          if(Tiempo_Actual_Sueño - Tiempo_Esperando_Sueño >= Tiempo_Capturando_Sueño)
-          {
+          if(Tiempo_Actual_Sueño - Tiempo_Esperando_Sueño >= Tiempo_Capturando_Sueño) {
             Estado_Dato_Sueño = Esperando_15_Min;
             Tiempo_Comparacion_Sueño = Tiempo_Actual;
             Desactivar_Promedio_Sueño = false;
           }
           Recopilador_Cardiaco.push_back(BPM);
+        break;
       }
-      //Enviar al Celular
+
+      // Transmisión inmediata vía BLE en tiempo real
       if (Dispositivo_Conectado) {
         String Envira_Datos = String(Numero_Latido) + "||" + String(HVR) + "||" + String(BPM, 1) + "\n";
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
       }
     }
-    //Envia los datos del HVR a la aplicacion Solo una vez al dia(Mientras el usuario duerme)
+
+    // Reporte diario de promedios HVR
     if (Contador_HVR >= 180 && Datos_De_Hoy == false){
         for (int i = 0; i < Contador_HVR-1; i++) {
           Diferencia_HVR[i] = Recopilador_HVR[i] - Recopilador_HVR[i+1];
@@ -286,9 +311,10 @@ void loop() {
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
     }
-    //Envia los datos del BPM a la aplicacion Solo una vez al dia(Mientras el usuario duerme)
+
+    // Reporte diario de promedios cardíacos generales
     if (Contador_BPM >= 180 && Datos_De_Hoy == false){
-        for (int i = 0; i <= Contador_BPM; i++) {
+        for (int i = 0; i < Contador_BPM; i++) { 
           Promedio_BPM += Recopilador_BPM[i];
         }
         Promedio_BPM /= Contador_BPM;
@@ -297,49 +323,49 @@ void loop() {
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
     }
-    //Promedia la frecuencia cardiaca para detectar si el ususario esta dormido(Se realiza el promedio una vez cada 15 min)
+
+    // Procesamiento de patrones del sueño descartando variaciones agudas
     if (Estado_Dato_Sueño == Esperando_15_Min && Desactivar_Promedio_Sueño == false) {
-      for (int i = 0; i <= Recopilador_Cardiaco.size(); i++) {
+      for (size_t i = 1; i < Recopilador_Cardiaco.size(); i++) {
         float Ignorar_Picos = Recopilador_Cardiaco[i] - Recopilador_Cardiaco[i-1];
         Ignorar_Picos = Ignorar_Picos * Ignorar_Picos;
         Ignorar_Picos = sqrt(Ignorar_Picos);
         if(Ignorar_Picos > 15){
           Picos_De_Frecuencia++;
-        }
-        else{
+        } else {
           Promedio_Cardiaco_Sueño += Recopilador_Cardiaco[i];
         }
       }
-      Promedio_Cardiaco_Sueño /= Recopilador_Cardiaco.size() - Picos_De_Frecuencia;
+      if((Recopilador_Cardiaco.size() - Picos_De_Frecuencia) > 0) {
+        Promedio_Cardiaco_Sueño /= (Recopilador_Cardiaco.size() - Picos_De_Frecuencia);
+      }
       Serial.print(Promedio_Cardiaco_Sueño);
       Serial.println("<------- Promedio Cardiaco Sueño");
       Desactivar_Promedio_Sueño = true;
     }
-    //Resetear Contador Estres
+
+    // Resetear contadores cíclicos de eventos de estrés y alertas
     if (Reset_Contador_Estres > 18){
       Contador_Estres = 0;
       Reset_Contador_Estres = 0;
     }
-    //Resetear BPM Estres
     if (Reset_Contador_BMP_Alerta > 18){
       Contador_BMP_Alerta = 0;
       Reset_Contador_BMP_Alerta = 0;
     }
-    //Activacion de Alertas
+    
+    // Conmutación lógica de banderas globales de alertas
     if (Contador_Estres > 9) {
       Alerta_Estres = true;
-    }
-    else {
+    } else {
       Alerta_Estres = false;
     }
     if (Contador_BMP_Alerta > 9) {
       Alerta_Cardiaca = true;
-    }
-    else{
+    } else {
       Alerta_Cardiaca = false;
     }
-  }
-  else{
+  } else {
     digitalWrite(Led_Verde, LOW);
   }
 }
