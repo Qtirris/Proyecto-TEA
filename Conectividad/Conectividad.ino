@@ -106,7 +106,5 @@ void setup() {
   HTTPinit();
 }
 
-void loop() {
-  
+void loop() {}
 
-}
