@@ -24,7 +24,6 @@ void wifiScan(){
   }
 }
 
-
 void wifiConnect(const char* ssid, const char* pass){ //Toma como parametros el nombre y la contraseña de la red
   int intentos = 0;
   if (WiFi.status()==WL_CONNECTED){//Se desconecta en caso de estar conectada
@@ -51,16 +50,17 @@ void wifiConnect(const char* ssid, const char* pass){ //Toma como parametros el 
   }
   else{
     Serial.println("Error al conectar.");
+    Serial.println("La conexión tardo demasiado, vefifique la contraseña e intentelo nuevmente");
     WiFi.disconnect();
   }
   
 }
-
+  
 void HTTPinit(){
   HTTPClient http;//Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
-  http.begin("http://httpbin.org/post");//Conectar al servidor
+  http.begin("http://192.168.20.143/estres/recibir.php");//Conectar al servidor
 
   Serial.println("Haciendo POST");
 
@@ -70,7 +70,7 @@ void HTTPinit(){
   //Form lo lee clave:valor
   //Esto facilida su almacenamiento.
 
-  int httpCode = http.POST("estres=85");
+  int httpCode = http.POST("alert=1");
   //Hace la petición y almacena el codigio de respues http
 
   if (httpCode > 0) {//Evita los errores de HTTPClient
@@ -84,7 +84,7 @@ void HTTPinit(){
           Serial.println(respuesta);
         }
       } else {
-        Serial.printf("HTTPClient Error: ", http.errorToString(httpCode).c_str());
+        Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
       }
 
   http.end();
