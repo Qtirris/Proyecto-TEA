@@ -134,13 +134,13 @@ void setup() {
   wifiConnect("TATAN_ARDILA", "91011814");
   delay(500);
 
-  alertPOST("http://192.168.20.143/estres/recibir.php", 1);
-  alertGET("http://192.168.20.143/estres/recibir.php");
+  alertPOST("http://192.168.20.150/estres/recibir.php", 1);
+  alertGET("http://192.168.20.150/estres/recibir.php");
 
   delay(200);
 
-  alertPOST("http://192.168.20.143/estres/recibir.php", 0);
-  alertGET("http://192.168.20.143/estres/recibir.php");
+  alertPOST("http://192.168.20.150/estres/recibir.php", 0);
+  alertGET("http://192.168.20.150/estres/recibir.php");
 }
 
 
