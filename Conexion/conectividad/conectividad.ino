@@ -25,11 +25,7 @@ void wifiScan() {
 
 void wifiConnect(const char* ssid, const char* pass) {  //Toma como parametros el nombre y la contraseña de la red
   int intentos = 0;
-  if (WiFi.status() == WL_CONNECTED) {  //Se desconecta en caso de estar conectada
-    Serial.println("Desconectando de la Red actual");
-    WiFi.disconnect();
-    delay(500);
-  }
+  wifiDisconnect(); //Se desconecta si ya esta conectado
 
   Serial.print("Conectando a la red: ");
   Serial.println(ssid);
@@ -51,6 +47,15 @@ void wifiConnect(const char* ssid, const char* pass) {  //Toma como parametros e
     Serial.println("La conexión tardo demasiado, vefifique la contraseña e intentelo nuevmente");
     WiFi.disconnect();
   }
+}
+void wifiDisconnect(){  //Se va a usar para desconectarse por orden de la app.
+  if (WiFi.status()==WL_CONNECTED){
+    Serial.print("Desconectando de la red: ");
+    Serial.println(WiFi.SSID());
+    WiFi.disconnect();
+    delay(200);
+  }
+
 }
 
 void alertPOST(const char* IP, const bool valor) {  //Recibe la IP y el valor de la alerta
