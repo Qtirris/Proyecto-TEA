@@ -58,7 +58,7 @@ void wifiDisconnect(){  //Se va a usar para desconectarse por orden de la app.
 
 }
 
-void alertPOST(const char* IP, const bool valor) {  //Recibe la IP y el valor de la alerta
+void statusPOST(const char* IP, const bool valor) {  //Recibe la IP y el valor de la alerta
   HTTPClient http;                                  //Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
@@ -72,7 +72,7 @@ void alertPOST(const char* IP, const bool valor) {  //Recibe la IP y el valor de
   //Form lo lee clave:valor
   //Esto facilida su almacenamiento.
 
-  String alerta = "alert=" + String(valor);
+  String alerta = "status=" + String(valor);
   //http.POST() solo recibe string, asi que los concatenamos
 
   int httpCode = http.POST(alerta);
@@ -96,7 +96,7 @@ void alertPOST(const char* IP, const bool valor) {  //Recibe la IP y el valor de
   http.end();
 }
 
-void alertGET(const char* IP) {  //Solo recibe la IP
+void statusGET(const char* IP) {  //Solo recibe la IP
   HTTPClient http;
 
   Serial.println("Conectando al servidor...");
@@ -134,13 +134,13 @@ void setup() {
   wifiConnect("TATAN_ARDILA", "91011814");
   delay(500);
 
-  alertPOST("http://192.168.20.150/estres/recibir.php", 1);
-  alertGET("http://192.168.20.150/estres/recibir.php");
+  statusPOST("https://teapp.lat/recibir/recibir.php", 1);
+  statusGET("https://teapp.lat/recibir/recibir.php");
 
   delay(200);
 
-  alertPOST("http://192.168.20.150/estres/recibir.php", 0);
-  alertGET("http://192.168.20.150/estres/recibir.php");
+  statusPOST("https://teapp.lat/recibir/recibir.php", 0);
+  statusGET("https://teapp.lat/recibir/recibir.php");
 }
 
 
