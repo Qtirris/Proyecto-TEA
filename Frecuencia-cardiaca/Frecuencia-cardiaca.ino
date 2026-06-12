@@ -246,7 +246,6 @@ void loop() {
           }
           if (Dia_1 == true && Promedio_Basal_HVR < Promedio_HVR_Estres && Hora_Actual < Hora_Dormir-30) {
             Promedio_Basal_HVR = Promedio_HVR_Estres;
-            Serial.println("Todo lo rico");
           }
           Capturar_HVR.clear();
           int Promediar_Estres = fabs(Promedio_HVR_Estres - Promedio_Basal_HVR);
@@ -356,14 +355,12 @@ void loop() {
           }  
         break;
       }
-
       if (Dispositivo_Conectado) {
         String Envira_Datos = String(Numero_Latido) + "||" + String(HVR) + "||" + String(BPM, 1) + "||" + String(Magnitud_Movimiento, 2) + "||" + String(Esta_Dormido) + "\n";
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
       }
     }
-
     // Reporte diario de promedios HVR
     if (Contador_HVR >= 180 && Datos_De_Hoy == false){
         for (int i = 0; i < Contador_HVR-1; i++) {
@@ -376,7 +373,6 @@ void loop() {
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
     }
-
     // Reporte diario de promedios cardíacos generales
     if (Contador_BPM >= 180 && Datos_De_Hoy == false){
         for (int i = 0; i < Contador_BPM; i++) { 
@@ -388,7 +384,6 @@ void loop() {
         pCharacteristicTX->setValue((uint8_t*)Envira_Datos.c_str(), Envira_Datos.length());
         pCharacteristicTX->notify(); 
     }
-
     // Procesamiento de patrones del sueño y autocalibración basal
     if (Estado_Dato_Sueño == Esperando_15_Min && Desactivar_Promedio_Sueño == false) {
       Picos_De_Frecuencia = 0;
@@ -407,11 +402,11 @@ void loop() {
       }
     }
 
-    if (Reset_Contador_Estres > 18){
+    if (Reset_Contador_Estres > 12){
       Contador_Estres = 0;
       Reset_Contador_Estres = 0;
     }
-    if (Reset_Contador_BMP_Alerta > 18){
+    if (Reset_Contador_BMP_Alerta > 12){
       Contador_BMP_Alerta = 0;
       Reset_Contador_BMP_Alerta = 0;
     }
