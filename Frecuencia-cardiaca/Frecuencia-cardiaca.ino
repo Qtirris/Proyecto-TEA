@@ -256,6 +256,7 @@ void loop() {
           }
           else if (Desviacion_HVR <= 30) {
             Serial.println("<---- Estado HVR Intranquilo");
+            Reset_Contador_Estres++;
           }
           else if (Desviacion_HVR > 30) {
             Serial.println("<---- Estado HVR Alerta ");
@@ -300,6 +301,7 @@ void loop() {
           }
           else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 20) {
             Serial.println("<---- Estado BMP Intranquilo");
+            Reset_Contador_BMP_Alerta++;
           }
           else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) > 20) {
             Serial.println("<---- Estado BMP Alerta");
@@ -329,7 +331,9 @@ void loop() {
         Promedio_Anterior_Movimiento = Promedio_Movimiento;
         Capturar_Movimiento.clear();
         Serial.print("Movimiento: ");
-        Serial.println(Promedio_Anterior_Movimiento);
+        Serial.print(Promedio_Anterior_Movimiento);
+        Serial.print("Quieto: ");
+        Serial.print(Esta_Quieto);
       }
       // Máquina de estados periódica para el análisis del Sueño
       switch (Estado_Dato_Sueño) {
