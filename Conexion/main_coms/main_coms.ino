@@ -1,7 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <BLEDevice.h>
-#include <BLEUtils.h>
+
 #include <BLEServer.h>
 
 #define WIFI_CRED_SERV_UUID "3373E991-457D-4656-9544-28DE1576896D" //UUID para el BLE
@@ -20,11 +20,13 @@ BLECharacteristic *pWifiCredChar = nullptr;
 BLECharacteristic *pPassCredChar = nullptr;
 BLECharacteristic *pWifiStartChar = nullptr;
 
+void wifiScan();
 //Callback del servidor (Conectar y desconectar)
 class Server_Callback : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
     Serial.println("Cliente conectado.");
     client_connected = true;
+    pServer->stopAdvertising();
   }
   void onDisconnect(BLEServer *pServer) {
     Serial.println("Cliente desconectado.");
@@ -51,12 +53,14 @@ class WifiStartChar_Callback : public BLECharacteristicCallbacks{
     String valor = pChar->getValue();
     if (valor=="1"){
       wifiScan();
+      pChar->setValue("0");
     }
-    valor->setValue("0");
+    else{
+      pChar->setValue("0")
+    }
   }
   void onRead(BLECharacteristic *pChar){
     String valor = pChar->getValue();
-    valor->getValue();
     Serial.println(valor);
   }
 };
@@ -116,6 +120,9 @@ void wifiScan() {
       //if (WiFi.RSSI(i) > min_rssi) {   //Imprime solo las redes con señales fuertes
         wifi_array[i]=WiFi.SSID(i)+";"+WiFi.RSSI(i);
       //}
+    }
+    for (int i;i<redes;i++){
+      Serial.println(wifi_array[i]);
     }
   }
 }
