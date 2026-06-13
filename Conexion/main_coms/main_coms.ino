@@ -4,16 +4,21 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 
-#define SERVICE_UUID "3373E991-457D-4656-9544-28DE1576896D" //UUID para el BLE
-#define WIFI_CHAR_UUID "DFDE7591-38A4-4019-A6A1-C09B4D0FCE70" //UUID para el BLE
-#define PASS_CHAR_UUID "FB4E9190-0D85-4810-A2A0-124BFD25A1AA" //UUID para el BLE
+#define WIFI_CRED_SERV_UUID "3373E991-457D-4656-9544-28DE1576896D" //UUID para el BLE
+#define WIFI_CRED_CHAR_UUID "DFDE7591-38A4-4019-A6A1-C09B4D0FCE70" //UUID para el BLE
+#define PASS_CRED_CHAR_UUID "FB4E9190-0D85-4810-A2A0-124BFD25A1AA" //UUID para el BLE
+
+#define WIFI_START_SERV_UUID "897DC0D1-1C3A-4567-BF0E-1EDB5DD83855"
+#define WIFI_START_CHAR_UUID "03FE09DA-15E3-43B4-9C1B-47A7DA1AC992"
 
 bool client_connected = false;
 //Objetos del BLE
 BLEServer *pServer = nullptr;
-BLEService *pService = nullptr;
-BLECharacteristic *pWifiChar = nullptr;
-BLECharacteristic *pPassChar = nullptr;
+BLEService *pWifiCredService = nullptr;
+BLEService *pWifiStartService = nullptr;
+BLECharacteristic *pWifiCredChar = nullptr;
+BLECharacteristic *pPassCredChar = nullptr;
+BLECharacteristic *pWifiStartChar = nullptr;
 
 //Callback del servidor (Conectar y desconectar)
 class Server_Callback : public BLEServerCallbacks {
@@ -39,7 +44,6 @@ class Char_Callback : public BLECharacteristicCallbacks {
     String valor = pChar->getValue();
     Serial.print("Leyó:");
     Serial.println(valor.c_str());
-
   }
 };
 
@@ -56,21 +60,28 @@ void wifi_credentials() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new Server_Callback());
 
-  pService = pServer->createService(SERVICE_UUID);
+  pWifiStartService = pServer->createService(WIFI_START_SERV_UUID);
+  pWifiStartChar = pWifiStartService->createCharacteristic(WIFI_START_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  pWifiStartChar->setCallbacks(new Char_Callback());
+  pWifiStartChar->setValue("0");
+  pWifiStartService->start();
 
-  pWifiChar = pService->createCharacteristic(WIFI_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
-  pPassChar = pService->createCharacteristic(PASS_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pWifiCredService = pServer->createService(WIFI_CRED_SERV_UUID);
 
-  pWifiChar->setCallbacks(new Char_Callback());
-  pPassChar->setCallbacks(new Char_Callback());
+  pWifiCredChar = pWifiCredService->createCharacteristic(WIFI_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  pPassCredChar = pWifiCredService->createCharacteristic(PASS_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
 
-  pWifiChar->setValue("PRUEBA");
-  pPassChar->setValue("");
+  pWifiCredChar->setCallbacks(new Char_Callback());
+  pPassCredChar->setCallbacks(new Char_Callback());
 
-  pService->start();
+  pWifiCredChar->setValue("PRUEBA");
+  pPassCredChar->setValue("");
+
+  pWifiCredService->start();
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->addServiceUUID(WIFI_CRED_SERV_UUID);
+  pAdvertising->addServiceUUID(WIFI_START_SERV_UUID);
   pAdvertising->setScanResponse(true);
 
   BLEDevice::startAdvertising();
@@ -78,7 +89,7 @@ void wifi_credentials() {
 
 
 void wifiScan() {
-  const int min_rssi = -80;  //Limite de señal
+  //const int min_rssi = -80;  //Limite de señal
   Serial.println("Buscando Redes...");
   byte redes = WiFi.scanNetworks();  //Cantidad de redes encontradas
   if (redes == 0) {
@@ -86,15 +97,12 @@ void wifiScan() {
   } else {
     Serial.print(redes);
     Serial.println(" Redes encontradas");
+    String wifi_array[redes];
 
     for (int i = 0; i < redes; i++) {  //Recorre las redes
-      if (WiFi.RSSI(i) > min_rssi) {   //Imprime solo las redes con señales fuertes
-        Serial.print(i + 1);
-        Serial.print(" Red: ");
-        Serial.print(WiFi.SSID(i));
-        Serial.print(" Señal: ");
-        Serial.println(WiFi.RSSI(i));
-      }
+      //if (WiFi.RSSI(i) > min_rssi) {   //Imprime solo las redes con señales fuertes
+        wifi_array[i]=WiFi.SSID(i)+";"+WiFi.RSSI(i);
+      //}
     }
   }
 }
@@ -200,23 +208,25 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  WiFi.mode(WIFI_STA);
-  wifiScan();
-  delay(500);
+  //WiFi.mode(WIFI_STA);
+  //wifiScan();
+  //delay(500);
 
-  wifiConnect("A56Prueba", "11223345");  //Esto es para porbar que se desconecte de la red inicial
-  delay(500);
+  //wifiConnect("A56Prueba", "11223345");  //Esto es para porbar que se desconecte de la red inicial
+  //delay(500);
 
-  wifiConnect("TATAN_ARDILA", "91011814");
-  delay(500);
+  //wifiConnect("TATAN_ARDILA", "91011814");
+  //delay(500);
 
-  statusPOST("https://teapp.lat/recibir/recibir.php", 1);
-  statusGET("https://teapp.lat/recibir/recibir.php");
+  //statusPOST("https://teapp.lat/recibir/recibir.php", 1);
+  //statusGET("https://teapp.lat/recibir/recibir.php");
 
-  delay(200);
+  //delay(200);
 
-  statusPOST("https://teapp.lat/recibir/recibir.php", 0);
-  statusGET("https://teapp.lat/recibir/recibir.php");
+  //statusPOST("https://teapp.lat/recibir/recibir.php", 0);
+  //statusGET("https://teapp.lat/recibir/recibir.php");
+
+  wifi_credentials();
 }
 
 
