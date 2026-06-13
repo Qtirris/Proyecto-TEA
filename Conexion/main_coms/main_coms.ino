@@ -33,8 +33,8 @@ class Server_Callback : public BLEServerCallbacks {
   }
 };
 
-//Callback Caracteristicas (Write y Read)
-class Char_Callback : public BLECharacteristicCallbacks {
+//Callback Caracteristicas Wifi Credentials (Write y Read)
+class WifiCredChar_Callback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
     Serial.print("Valor: ");
@@ -46,7 +46,20 @@ class Char_Callback : public BLECharacteristicCallbacks {
     Serial.println(valor.c_str());
   }
 };
-
+class WifiStartChar_Callback : public BLECharacteristicCallbacks{
+  void onWrite(BLECharacteristic *pChar){
+    String valor = pChar->getValue();
+    if (valor=="1"){
+      wifiScan();
+    }
+    valor->setValue("0");
+  }
+  void onRead(BLECharacteristic *pChar){
+    String valor = pChar->getValue();
+    valor->getValue();
+    Serial.println(valor);
+  }
+};
 //Función principal 
 void wifi_credentials() {
   bool server_status = BLEDevice::init("ESP32 TEA");
@@ -62,17 +75,17 @@ void wifi_credentials() {
 
   pWifiStartService = pServer->createService(WIFI_START_SERV_UUID);
   pWifiStartChar = pWifiStartService->createCharacteristic(WIFI_START_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
-  pWifiStartChar->setCallbacks(new Char_Callback());
+  pWifiStartChar->setCallbacks(new WifiStartChar_Callback());
   pWifiStartChar->setValue("0");
   pWifiStartService->start();
-
+  
   pWifiCredService = pServer->createService(WIFI_CRED_SERV_UUID);
 
   pWifiCredChar = pWifiCredService->createCharacteristic(WIFI_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pPassCredChar = pWifiCredService->createCharacteristic(PASS_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
 
-  pWifiCredChar->setCallbacks(new Char_Callback());
-  pPassCredChar->setCallbacks(new Char_Callback());
+  pWifiCredChar->setCallbacks(new WifiCredChar_Callback());
+  pPassCredChar->setCallbacks(new WifiCredChar_Callback());
 
   pWifiCredChar->setValue("PRUEBA");
   pPassCredChar->setValue("");
@@ -208,7 +221,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  //WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA);
   //wifiScan();
   //delay(500);
 
