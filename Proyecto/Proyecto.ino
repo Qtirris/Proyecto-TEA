@@ -48,34 +48,40 @@ class Server_Callback : public BLEServerCallbacks {
 //************************
 //Callback Caracteristicas
 //************************
-class WifiStartChar_Callback : public BLECharacteristicCallbacks{
-  void onWrite(BLECharacteristic *pChar){
+class WifiStartChar_Callback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
-    if (valor=="1"){
-      wifiScan();
-      String redes=wifiScan();
+    Serial.println(valor);
+    if (valor == "1") {
+      String redes = wifiScan();
+      Serial.println(redes);
       pWifiCredChar->setValue(redes);
       pChar->setValue("");
     }
-    else{
-      pChar->setValue("");
-    }
   }
-  void onRead(BLECharacteristic *pChar){
+  void onRead(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
     Serial.println(valor);
-    pChar->setValue("");
   }
 };
 class WifiCredChar_Callback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
-    Serial.print("Valor: ");
     Serial.println(valor.c_str());
+    String uuid=pChar->getUUID().toString();
+    uuid.toUpperCase();
+    if (uuid==WIFI_CRED_CHAR_UUID){
+      wifi_ssid=valor;
+    } else if(uuid==PASS_CRED_CHAR_UUID){
+      wifi_pass=valor;
+      Serial.println(wifi_ssid);
+      Serial.println(wifi_pass);
+      wifiConnect(wifi_ssid.c_str(),wifi_pass.c_str());
+    }
   }
   void onRead(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
-    Serial.print("Leyó:");
+    Serial.print("Leyó: ");
     Serial.println(valor.c_str());
   }
 };
