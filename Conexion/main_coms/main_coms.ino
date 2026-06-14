@@ -8,13 +8,16 @@
 //**********************
 //Configuaricón BLE coms
 //**********************
-#define WIFI_CRED_SERV_UUID "3373E991-457D-4656-9544-28DE1576896D" //UUID para el BLE
-#define WIFI_CRED_CHAR_UUID "DFDE7591-38A4-4019-A6A1-C09B4D0FCE70" //UUID para el BLE
-#define PASS_CRED_CHAR_UUID "FB4E9190-0D85-4810-A2A0-124BFD25A1AA" //UUID para el BLE
-#define WIFI_START_SERV_UUID "897DC0D1-1C3A-4567-BF0E-1EDB5DD83855" //UUID para el BLE
-#define WIFI_START_CHAR_UUID "03FE09DA-15E3-43B4-9C1B-47A7DA1AC992" //UUID para el BLE
+#define WIFI_CRED_SERV_UUID "3373E991-457D-4656-9544-28DE1576896D"   //UUID para el servicio
+#define WIFI_START_SERV_UUID "897DC0D1-1C3A-4567-BF0E-1EDB5DD83855"  //UUID para el servicio
+#define WIFI_CRED_CHAR_UUID "DFDE7591-38A4-4019-A6A1-C09B4D0FCE70"   //UUID para la caracteristica
+#define PASS_CRED_CHAR_UUID "FB4E9190-0D85-4810-A2A0-124BFD25A1AA"   //UUID para la caracteristica
+#define WIFI_START_CHAR_UUID "03FE09DA-15E3-43B4-9C1B-47A7DA1AC992"  //UUID para la caracteristica
 
-String wifiScan(); //Forward Declaration
+String wifiScan();  //Forward Declaration
+void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
+String wifi_pass="";
+String wifi_ssid="";
 //***************
 //Objetos del BLE
 //***************
@@ -36,7 +39,8 @@ class Server_Callback : public BLEServerCallbacks {
     Serial.println("Cliente desconectado.");
     pServer->startAdvertising();
     Serial.println(WiFi.status());
-    if (WiFi.status()==WL_CONNECTED){
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Apagando BLE");
       BLEDevice::deinit(true);
     }
   }
@@ -44,11 +48,11 @@ class Server_Callback : public BLEServerCallbacks {
 //************************
 //Callback Caracteristicas
 //************************
-
-class WifiStartChar_Callback : public BLECharacteristicCallbacks{
+cclass WifiStartChar_Callback : public BLECharacteristicCallbacks{
   void onWrite(BLECharacteristic *pChar){
     String valor = pChar->getValue();
     if (valor=="1"){
+      wifiScan();
       String redes=wifiScan();
       pWifiCredChar->setValue(redes);
       pChar->setValue("");
@@ -77,9 +81,10 @@ class WifiCredChar_Callback : public BLECharacteristicCallbacks {
 };
 //*****************
 //Función principal
-//***************** 
+//*****************
 void wifi_start_credentials() {
   bool server_status = BLEDevice::init("ESP32 TEA");
+  BLEDevice::setMTU(512);
   if (!server_status) {
     Serial.println("Error al establecer el servidor.");
     return;
@@ -94,13 +99,13 @@ void wifi_start_credentials() {
   pWifiStartChar->setCallbacks(new WifiStartChar_Callback());
   pWifiStartChar->setValue("");
   pWifiStartService->start();
-  
+
   pWifiCredService = pServer->createService(WIFI_CRED_SERV_UUID);
   pWifiCredChar = pWifiCredService->createCharacteristic(WIFI_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pPassCredChar = pWifiCredService->createCharacteristic(PASS_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
   pWifiCredChar->setCallbacks(new WifiCredChar_Callback());
   pPassCredChar->setCallbacks(new WifiCredChar_Callback());
-  pWifiCredChar->setValue("PRUEBA");
+  pWifiCredChar->setValue("");
   pPassCredChar->setValue("");
   pWifiCredService->start();
 
@@ -111,31 +116,43 @@ void wifi_start_credentials() {
 
   BLEDevice::startAdvertising();
 }
+//*****************
+//Funciones de COMS
+//*****************
 String wifiScan() {
   Serial.println("Buscando Redes...");
+  int min_rssi = -80;
+  byte redes_totales = 0;
   byte redes = WiFi.scanNetworks();  //Cantidad de redes encontradas
   if (redes == 0) {
     Serial.println("No se encontraron redes.");
   } else {
-    Serial.print(redes);
-    Serial.println(" Redes encontradas");
-    String wifi_array[redes];
-    String wifi_list="";
-
     for (int i = 0; i < redes; i++) {  //Recorre las redes
-      wifi_array[i]=WiFi.SSID(i)+";"+WiFi.RSSI(i);
+      if (WiFi.RSSI(i) > min_rssi) {
+        redes_totales += 1;
+      }
     }
-    for (int i;i<redes;i++){
-      Serial.println(wifi_array[i]);
-      wifi_list+=wifi_array[i];
-      if (i<redes-1) wifi_list+=";";
+    Serial.print(redes_totales);
+    Serial.println(" Redes encontradas");
+    String wifi_list = "";
+    for (int i = 0; i < redes_totales; i++) {
+      wifi_list += WiFi.SSID(i) + "," + WiFi.RSSI(i);
+      if (i < redes - 2) wifi_list += "|";
     }
     return wifi_list;
   }
 }
-void wifiConnect(const char* ssid, const char* pass) {  //Toma como parametros el nombre y la contraseña de la red
+void wifiDisconnect() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Desconectando de la red: ");
+    Serial.println(WiFi.SSID());
+    WiFi.disconnect();
+    delay(200);
+  }
+}
+void wifiConnect(const char *ssid, const char *pass) {
   int intentos = 0;
-  wifiDisconnect(); //Se desconecta si ya esta conectado
+  wifiDisconnect();  //Se desconecta si ya esta conectado
 
   Serial.print("Conectando a la red: ");
   Serial.println(ssid);
@@ -158,34 +175,20 @@ void wifiConnect(const char* ssid, const char* pass) {  //Toma como parametros e
     WiFi.disconnect();
   }
 }
-void wifiDisconnect(){  //Se va a usar para desconectarse por orden de la app.
-  if (WiFi.status()==WL_CONNECTED){
-    Serial.print("Desconectando de la red: ");
-    Serial.println(WiFi.SSID());
-    WiFi.disconnect();
-    delay(200);
-  }
-}
-void statusPOST(const char* IP, const bool status) {  //Recibe la IP y el valor de la alerta
-  HTTPClient http;                                  //Iniciamos el objeto
+void statusPOST(const char *IP, const bool status) {
+  HTTPClient http;
 
   Serial.println("Conectando al servidor...");
   http.begin(IP);  //Conectar al servidor
+  Serial.println(http.begin(IP));
 
   Serial.println("Haciendo POST");
 
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  //El solo post envia el texto, content-type= plain text
-  //Especificamos en el header que el content-type = form
-  //Form lo lee clave:valor
-  //Esto facilida su almacenamiento.
 
-  String alerta = "status=" + String(status);
-  //http.POST() solo recibe string, asi que los concatenamos
+  String alerta = "status=" + String(status);//Solo recibe string
 
   int httpCode = http.POST(alerta);
-  //Hace la petición y almacena el codigio de respues http
-  //alert es el nombre de la columna de la tabla de mySQL con tipo de variable booleano (1 o 0)
 
   if (httpCode > 0) {  //Evita los errores de HTTPClient
     Serial.print("httpCode= ");
@@ -193,7 +196,6 @@ void statusPOST(const char* IP, const bool status) {  //Recibe la IP y el valor 
 
     if (httpCode == HTTP_CODE_OK) {
       String respuesta = http.getString();
-      //Guarda la respuesta
       Serial.println("Respuesta: ");
       Serial.println(respuesta);
     }
@@ -203,49 +205,42 @@ void statusPOST(const char* IP, const bool status) {  //Recibe la IP y el valor 
 
   http.end();
 }
-void promediosPOST(const char* IP, const float dato) {  //Recibe la IP y el valor de la alerta
-  HTTPClient http;                                  //Iniciamos el objeto
-
-  Serial.println("Conectando al servidor...");
-  http.begin(IP);  //Conectar al servidor
-
-  Serial.println("Haciendo POST");
-
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  //El solo post envia el texto, content-type= plain text
-  //Especificamos en el header que el content-type = form
-  //Form lo lee clave:valor
-  //Esto facilida su almacenamiento.
-
-  String promedio = "status=" + String(dato);
-  //http.POST() solo recibe string, asi que los concatenamos
-
-  int httpCode = http.POST(promedio);
-  //Hace la petición y almacena el codigio de respues http
-  //alert es el nombre de la columna de la tabla de mySQL con tipo de variable booleano (1 o 0)
-
-  if (httpCode > 0) {  //Evita los errores de HTTPClient
-    Serial.print("httpCode= ");
-    Serial.println(httpCode);
-
-    if (httpCode == HTTP_CODE_OK) {
-      String respuesta = http.getString();
-      //Guarda la respuesta
-      Serial.println("Respuesta: ");
-      Serial.println(respuesta);
-    }
-  } else {
-    Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
-  }
-
-  http.end();
-}
-void statusGET(const char* IP) {  //Solo recibe la IP
+void promediosPOST(const char *IP, const float dato) {
   HTTPClient http;
 
   Serial.println("Conectando al servidor...");
   http.begin(IP);
 
+  Serial.println("Haciendo POST");
+
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  String promedio = "status=" + String(dato);
+
+  int httpCode = http.POST(promedio);
+
+  if (httpCode > 0) {  //Evita los errores de HTTPClient
+    Serial.print("httpCode= ");
+    Serial.println(httpCode);
+
+    if (httpCode == HTTP_CODE_OK) {
+      String respuesta = http.getString();
+      //Guarda la respuesta
+      Serial.println("Respuesta: ");
+      Serial.println(respuesta);
+    }
+  } else {
+    Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+}
+void statusGET(const char *IP) {  //Solo recibe la IP
+  HTTPClient http;
+
+  Serial.println("Conectando al servidor...");
+  http.begin(IP);
+  
   Serial.println("Haciendo GET");
   int httpCode = http.GET();
 
@@ -261,16 +256,16 @@ void statusGET(const char* IP) {  //Solo recibe la IP
   } else {
     Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
   }
-
   http.end();
 }
 
 void setup() {
   Serial.begin(115200);
 
-  WiFi.mode(WIFI_STA); // Poner en modo station a la ESP
-  wifi_start_credentials(); //Llama al BLE
+  WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
+  wifi_start_credentials();  //Llama al BLE
+  
 }
-void loop(){
+void loop() {
 
 }
