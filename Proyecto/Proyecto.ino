@@ -281,8 +281,8 @@ Adafruit_MPU6050 Mpu_Sensor;
 //***********************
 // Configuración de Pines
 //***********************
-#define Led_Verde 6 
-#define Led_Rojo 8
+#define Led_Verde 9 
+#define Led_Rojo 7
 //********
 // Horario
 //********
