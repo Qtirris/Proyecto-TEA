@@ -351,9 +351,6 @@ void setup() {
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
-
-  wifiConnect("TATAN_ARDILA", "91011814");
-
   //***********************
   //Inicializacion de pines
   //***********************
@@ -397,7 +394,7 @@ void setup() {
 //-------------------------------------------------------------------------------------------
 void loop() {
   unsigned long Tiempo=millis();
-  if(Tiempo-Tiempo_Anterior>=60000){
+  if(Tiempo-Tiempo_Anterior>=600000){
     Tiempo_Anterior=Tiempo;
     hora = getTime(publicIP);
     Serial.println(hora);
