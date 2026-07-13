@@ -266,16 +266,19 @@ void statusPOST(const char *IP, const bool status) {  //Recibe la IP y el valor 
 #include <vector>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+#include <Preferences.h>
 //********
 //Sensores
 //********
 MAX30105 Sensor_Cardiaco;
 Adafruit_MPU6050 Mpu_Sensor;
+Preferences preferences;
 //***********************
 // Configuración de Pines
 //***********************
 #define Led_Verde 9
 #define Led_Rojo 7
+#define Motor 3
 //********
 // Horario
 //********
@@ -287,6 +290,9 @@ int Hora_Activacion = 1200;
 //*******************
 bool Datos_De_Hoy = false;
 bool Dia_1 = true;
+bool Tocando_Piel = false;
+bool Tocando_Piel_Aneterior = false;
+int Contador_Promedios = 0;
 //*****************
 // Variables de HVR
 //*****************
@@ -297,8 +303,10 @@ int Contador_HVR = 0;
 float Promedio_HVR = 0;
 float Promedio_Basal_HVR = 0;
 std::vector<int> Capturar_HVR;
-byte Nivel_Superior_HVR = 20;
+int Nivel_Superior_HVR = 20;
 bool HVR_Primitivo = true;
+float Guardar_Promedios_HVR[7];
+float Guardar_Recuperar_HVR[7];
 //*********************
 // Variables del estres
 //*********************
@@ -318,9 +326,11 @@ float Promedio_Basal_BPM = 0;
 int Contador_BPM = 0;
 std::vector<int> Capturar_BPM;
 bool Alerta_Cardiaca = false;
-byte Contador_BMP_Alerta = 0;
-byte Reset_Contador_BMP_Alerta = 0;
+int Contador_BMP_Alerta = 0;
+int Reset_Contador_BMP_Alerta = 0;
 bool BMP_Primitivo = true;
+float Guardar_Promedios_BPM[7];
+float Guardar_Recuperar_BPM[7];
 //*********************************
 // Variables de deteccion del sueño
 //*********************************
@@ -328,6 +338,7 @@ int Picos_De_Frecuencia = 0;
 std::vector<int> Recopilador_Cardiaco;
 const unsigned long Tiempo_Esperando_Sueño = 15000;
 const unsigned long Tiempo_Capturando_Sueño = 15000;
+const unsigned long Tiempo_De_Espera_Datos = 15000;
 unsigned long Tiempo_Comparacion_Sueño = 0;
 bool Esta_Dormido = false;
 enum Estado_Datos_Dormido {
@@ -343,7 +354,7 @@ float Promedio_Cardiaco_Sueño = 0;
 float Accel_X = 0, Accel_Y = 0, Accel_Z = 0;
 float Magnitud_Movimiento = 0;
 float Promedio_Anterior_Movimiento = 0;
-byte Esta_Quieto = 0;
+int Esta_Quieto = 0;
 std::vector<int> Capturar_Movimiento;
 //-------------------------------------------------------------------------------------------
 void setup() {
@@ -390,6 +401,35 @@ void setup() {
   Mpu_Sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
   Serial.println("-> Sensor MPU-6050 detectado");
   //!FUNCIONES HORA DE ACTIVACION Y ACTUAL Y DORMIR
+  //Acceder a datos guardados
+  Contador_Promedios = preferences.getInt("contador", 0);
+  preferences.getBytes("hvr", Guardar_Recuperar_HVR, sizeof(Guardar_Recuperar_HVR));
+  preferences.getBytes("bpm", Guardar_Recuperar_BPM, sizeof(Guardar_Recuperar_BPM));
+  for (int i = 0; i < Contador_Promedios; i++) {
+    Promedio_Basal_HVR += Guardar_Recuperar_HVR[i];
+    Promedio_Basal_BPM += Guardar_Recuperar_BPM[i];
+    Guardar_Promedios_HVR[i] = Guardar_Recuperar_HVR[i];
+    Guardar_Promedios_BPM[i] = Guardar_Recuperar_BPM[i];
+  }
+  Promedio_Basal_HVR /= Contador_Promedios -1;
+  Promedio_Basal_BPM /= Contador_Promedios -1;
+  if (Contador_Promedios > 0) {
+    Dia_1 = preferences.getBool("dia1", 0 );
+  }
+  if (Contador_Promedios > 7) {
+    preferences.end();
+  }
+  for (int i = 0 ; i <= 7; i++) {
+    Serial.print(Guardar_Recuperar_HVR[i]);
+    Serial.print("|");
+  }
+  Serial.println("bpm");
+  for (int i = 0 ; i <= 7; i++) {
+    Serial.print(Guardar_Recuperar_BPM[i]);
+    Serial.print("|");
+  }
+  Serial.println(Contador_Promedios);
+  Serial.println(Dia_1);
 }
 //-------------------------------------------------------------------------------------------
 void loop() {
@@ -404,11 +444,18 @@ void loop() {
   //******************************************
   Sensor_Cardiaco.check();
   long Valor_Presencia = Sensor_Cardiaco.getIR();
+  if (Tocando_Piel != Tocando_Piel_Aneterior){
+    //Hacer post de q el sensor no esta detectando
+  }
   if (Valor_Presencia < 50000) {
     digitalWrite(Led_Rojo, HIGH);
+    Tocando_Piel_Aneterior = Tocando_Piel;
+    Tocando_Piel = false;
     return;
   } else {
     digitalWrite(Led_Rojo, LOW);
+    Tocando_Piel_Aneterior = Tocando_Piel;
+    Tocando_Piel = true;
   }
   //FUCION DE ACTUALIZAR HORA ACTUAL
   if (Dia_1 == true) {
@@ -598,10 +645,10 @@ void loop() {
       }
       Promedio_HVR /= Contador_HVR - 1;
       Contador_HVR = 0;
-      //
-      //Funcion que envia HVR al server
-      //
-      Promedio_HVR = 0;
+      if (Contador_Promedios < 7) {
+        Guardar_Promedios_HVR[Contador_Promedios] = Promedio_HVR;
+        preferences.putBytes("hvr", Guardar_Promedios_HVR, sizeof(Guardar_Promedios_HVR));
+      }
     }
     //************************************************
     // Reporte diario de promedios BMP
@@ -612,12 +659,15 @@ void loop() {
       }
       Promedio_BPM /= Contador_BPM;
       Contador_BPM = 0;
-
-      //
-      //Funcion que envia BPM al server
-      //
-      Promedio_BPM = 0;
-      Datos_De_Hoy = true;
+      if (Contador_Promedios < 7) {
+        Guardar_Promedios_BPM[Contador_Promedios] = Promedio_BPM;
+        preferences.putBytes("bpm", Guardar_Promedios_BPM, sizeof(Guardar_Promedios_BPM));
+        Contador_Promedios++;
+        preferences.putInt("contador", Contador_Promedios);
+        Dia_1 = false;
+        preferences.putBool("dia1", Dia_1);
+        preferences.end();
+      }
     }
 
     // Procesamiento de patrones del sueño y autocalibración basal
@@ -637,7 +687,11 @@ void loop() {
         Promedio_Cardiaco_Sueño /= (Recopilador_Cardiaco.size() - Picos_De_Frecuencia);
       }
     }
-
+    if (Hora_Actual >= Hora_Dormir && Esta_Quieto > 60 && Promedio_Basal_BPM+4 >= Promedio_Cardiaco_Sueño) {
+      Esta_Dormido = true;
+    }else {
+      Esta_Dormido = false;
+    }
     if (Reset_Contador_Estres > 12) {
       Contador_Estres = 0;
       Reset_Contador_Estres = 0;
