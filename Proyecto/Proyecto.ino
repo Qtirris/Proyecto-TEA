@@ -355,7 +355,7 @@ float Accel_X = 0, Accel_Y = 0, Accel_Z = 0;
 float Magnitud_Movimiento = 0;
 float Promedio_Anterior_Movimiento = 0;
 int Esta_Quieto = 0;
-std::vector<int> Capturar_Movimiento;
+std::vector<float> Capturar_Movimiento;
 //-------------------------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
@@ -503,6 +503,8 @@ void loop() {
       Serial.print(BPM, 1);
       Serial.print(" | Mov: ");
       Serial.print(Magnitud_Movimiento, 2);
+      Serial.print(" | Quieto: ");
+      Serial.print(Esta_Quieto);
       Serial.print(" | Dormido: ");
       Serial.println(Esta_Dormido ? "SI" : "NO");
 
@@ -602,15 +604,15 @@ void loop() {
           Promedio_Movimiento += Capturar_Movimiento[i];
         }
         Promedio_Movimiento /= Capturar_Movimiento.size();
-        if (fabs(Promedio_Anterior_Movimiento - Promedio_Movimiento) < 2) {
+        if (fabs(Promedio_Anterior_Movimiento - Promedio_Movimiento) < 0.5) {
           Esta_Quieto++;
         } else {
           Esta_Quieto = 0;
         }
         Promedio_Anterior_Movimiento = Promedio_Movimiento;
-        Capturar_Movimiento.clear();
         Serial.print("Movimiento: ");
         Serial.println(Promedio_Anterior_Movimiento);
+        Capturar_Movimiento.clear();
       }
       //********************************************************
       // Máquina de estados periódica para el análisis del Sueño
@@ -687,7 +689,7 @@ void loop() {
         Promedio_Cardiaco_Sueño /= (Recopilador_Cardiaco.size() - Picos_De_Frecuencia);
       }
     }
-    if (Hora_Actual >= Hora_Dormir && Esta_Quieto > 60 && Promedio_Basal_BPM+4 >= Promedio_Cardiaco_Sueño) {
+    if (Hora_Actual >= Hora_Dormir && Esta_Quieto > 15 && Promedio_Basal_BPM+4 >= Promedio_Cardiaco_Sueño) {
       Esta_Dormido = true;
     }else {
       Esta_Dormido = false;
