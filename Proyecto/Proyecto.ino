@@ -19,14 +19,16 @@
 String wifiScan();                                     //Forward Declaration
 void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
 unsigned long Tiempo_Anterior = 0;
-const char *authIP="https://teapp.lat/auth/auth.php";
+const char *authIP = "https://teapp.lat/auth/auth.php";
 String wifi_pass = "";
 String wifi_ssid = "";
 String publicIP = "";
 String hora = "";
 String UserToken = "";
-String User="";
-String Token="";
+String UserToken_Buffer="";
+String User = "";
+String Token = "";
+int cota=0;
 //***************
 //Objetos del BLE
 //***************
@@ -98,13 +100,15 @@ class WifiCredChar_Callback : public BLECharacteristicCallbacks {
 class UserTokenChar_Callback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
-    UserToken = valor.c_str();
-    Serial.println(UserToken);
-    int separador=valor.indexOf(",");
-    User=UserToken.substring(0,separador);
-    Token=UserToken.substring(separador+1);
-    Serial.println(User);
-    Serial.println(Token); 
+    UserToken_Buffer+=valor;
+    if (UserToken_Buffer.indexOf("\n")!= -1){
+      UserToken_Buffer.trim();
+      int separador = UserToken_Buffer.indexOf(",");
+      User = UserToken.substring(0, separador);
+      Token = UserToken.substring(separador + 1);
+      Serial.println(User);
+      Serial.println(Token);
+    }
   }
 };
 //*********************
@@ -254,27 +258,28 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
 }
 
 void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //Recibe la IP y el valor de la alerta
-  HTTPClient http_info;                                    //Iniciamos el objeto
+  HTTPClient http_info;                                                      //Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
-  http.begin(authIP);  //Conectar al servidor
+  http_info.begin(authIP);  //Conectar al servidor
 
   Serial.println("Haciendo POST");
 
-  http.addHeader("USER", User);
-  http.addHeader("TOKEN", Token);
-  info=BPMprom.toString()+HVRprom.toString()+superficie.toString()+status.toString();
-  int httpCode = http.POST(info);
+  http_info.addHeader("USER", User);
+  http_info.addHeader("TOKEN", Token);
+  String info = String(BPMprom) + ";" + String(HVRprom) + ";" + String(superficie) + ";" + String(status);
+  Serial.println(info);
+  int httpCode = http_info.POST(info);
 
   if (httpCode > 0) {
     Serial.print("httpCode= ");
     Serial.println(httpCode);
-   String respuesta = http.getString();
+    String respuesta = http_info.getString();
     Serial.println("Respuesta: ");
     Serial.println(respuesta);
-  
+
   } else {
-    Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("HTTPClient Error: %s\n", http_info.errorToString(httpCode).c_str());
   }
 
   http_info.end();
@@ -384,8 +389,6 @@ void setup() {
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
-  delay(1000)
-  Serial.println(ESP.getFreeHeap());
   //wifiConnect("TATAN_ARDILA","91011814");
   //***********************
   //Inicializacion de pines
@@ -458,6 +461,15 @@ void setup() {
 }
 //-------------------------------------------------------------------------------------------
 void loop() {
+  if (WiFi.status() == WL_CONNECTED && cota < 3) {
+    infoPOST(120, 60, 1, 0);
+    delay(1000);
+    infoPOST(100, 70, 0, 1);
+    delay(1000);
+    infoPOST(-1, -1, 1, 1);
+    delay(1000);
+    cota = cota + 1;
+  }
   //***************
   //Obtiene la Hora
   //***************
@@ -473,7 +485,7 @@ void loop() {
   Sensor_Cardiaco.check();
   long Valor_Presencia = Sensor_Cardiaco.getIR();
   if (Tocando_Piel != Tocando_Piel_Aneterior) {
-    infoPOST(-1,-1,0,-1);
+    infoPOST(-1, -1, 0, -1);
   }
   if (Valor_Presencia < 50000) {
     digitalWrite(Led_Rojo, HIGH);
