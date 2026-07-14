@@ -14,14 +14,18 @@
 #define PASS_CRED_CHAR_UUID "FB4E9190-0D85-4810-A2A0-124BFD25A1AA"   //UUID para el BLE
 #define WIFI_START_SERV_UUID "897DC0D1-1C3A-4567-BF0E-1EDB5DD83855"  //UUID para el BLE
 #define WIFI_START_CHAR_UUID "03FE09DA-15E3-43B4-9C1B-47A7DA1AC992"  //UUID para el BLE
+#define USER_TOKEN_CHAR_UUID "2DA7E879-F0D5-4E74-8317-E40A5D87413C"
 
 String wifiScan();                                     //Forward Declaration
 void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
+unsigned long Tiempo_Anterior = 0;
 String wifi_pass = "";
 String wifi_ssid = "";
 String publicIP = "";
-String hora="";
-unsigned long Tiempo_Anterior=0;
+String hora = "";
+String UserToken = "";
+String User="";
+String Token="";
 //***************
 //Objetos del BLE
 //***************
@@ -31,6 +35,7 @@ BLEService *pWifiStartService = nullptr;
 BLECharacteristic *pWifiCredChar = nullptr;
 BLECharacteristic *pPassCredChar = nullptr;
 BLECharacteristic *pWifiStartChar = nullptr;
+BLECharacteristic *pUserTokenChar = nullptr;
 //*********************
 //Callback del servidor
 //*********************
@@ -89,6 +94,18 @@ class WifiCredChar_Callback : public BLECharacteristicCallbacks {
     Serial.println(valor.c_str());
   }
 };
+class UserTokenChar_Callback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pChar) {
+    String valor = pChar->getValue();
+    UserToken = valor.c_str();
+    Serial.println(UserToken);
+    int separador=valor.indexOf(",");
+    User=UserToken.substring(0,separador);
+    Token=UserToken.substring(separador+1);
+    Serial.println(User);
+    Serial.println(Token); 
+  }
+};
 //*********************
 //Función principal BLE
 //*********************
@@ -113,10 +130,13 @@ void wifi_start_credentials() {
   pWifiCredService = pServer->createService(WIFI_CRED_SERV_UUID);
   pWifiCredChar = pWifiCredService->createCharacteristic(WIFI_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pPassCredChar = pWifiCredService->createCharacteristic(PASS_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pUserTokenChar = pWifiCredService->createCharacteristic(USER_TOKEN_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
   pWifiCredChar->setCallbacks(new WifiCredChar_Callback());
   pPassCredChar->setCallbacks(new WifiCredChar_Callback());
+  pUserTokenChar->setCallbacks(new UserTokenChar_Callback());
   pWifiCredChar->setValue("");
   pPassCredChar->setValue("");
+  pUserTokenChar->setValue("");
   pWifiCredService->start();
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -222,6 +242,7 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
     WiFi.disconnect();
   }
   publicIP = getIP();
+  Serial.println(publicIP);
 
   hora = getTime(publicIP);
   Serial.println(hora);
@@ -411,20 +432,20 @@ void setup() {
     Guardar_Promedios_HVR[i] = Guardar_Recuperar_HVR[i];
     Guardar_Promedios_BPM[i] = Guardar_Recuperar_BPM[i];
   }
-  Promedio_Basal_HVR /= Contador_Promedios -1;
-  Promedio_Basal_BPM /= Contador_Promedios -1;
+  Promedio_Basal_HVR /= Contador_Promedios - 1;
+  Promedio_Basal_BPM /= Contador_Promedios - 1;
   if (Contador_Promedios > 0) {
-    Dia_1 = preferences.getBool("dia1", 0 );
+    Dia_1 = preferences.getBool("dia1", 0);
   }
   if (Contador_Promedios > 7) {
     preferences.end();
   }
-  for (int i = 0 ; i <= 7; i++) {
+  for (int i = 0; i <= 7; i++) {
     Serial.print(Guardar_Recuperar_HVR[i]);
     Serial.print("|");
   }
   Serial.println("bpm");
-  for (int i = 0 ; i <= 7; i++) {
+  for (int i = 0; i <= 7; i++) {
     Serial.print(Guardar_Recuperar_BPM[i]);
     Serial.print("|");
   }
@@ -433,9 +454,9 @@ void setup() {
 }
 //-------------------------------------------------------------------------------------------
 void loop() {
-  unsigned long Tiempo=millis();
-  if(Tiempo-Tiempo_Anterior>=600000){
-    Tiempo_Anterior=Tiempo;
+  unsigned long Tiempo = millis();
+  if (Tiempo - Tiempo_Anterior >= 60000 && publicIP != "") {
+    Tiempo_Anterior = Tiempo;
     hora = getTime(publicIP);
     Serial.println(hora);
   }
@@ -444,7 +465,7 @@ void loop() {
   //******************************************
   Sensor_Cardiaco.check();
   long Valor_Presencia = Sensor_Cardiaco.getIR();
-  if (Tocando_Piel != Tocando_Piel_Aneterior){
+  if (Tocando_Piel != Tocando_Piel_Aneterior) {
     //Hacer post de q el sensor no esta detectando
   }
   if (Valor_Presencia < 50000) {
@@ -689,9 +710,9 @@ void loop() {
         Promedio_Cardiaco_Sueño /= (Recopilador_Cardiaco.size() - Picos_De_Frecuencia);
       }
     }
-    if (Hora_Actual >= Hora_Dormir && Esta_Quieto > 15 && Promedio_Basal_BPM+4 >= Promedio_Cardiaco_Sueño) {
+    if (Hora_Actual >= Hora_Dormir && Esta_Quieto > 15 && Promedio_Basal_BPM + 4 >= Promedio_Cardiaco_Sueño) {
       Esta_Dormido = true;
-    }else {
+    } else {
       Esta_Dormido = false;
     }
     if (Reset_Contador_Estres > 12) {
