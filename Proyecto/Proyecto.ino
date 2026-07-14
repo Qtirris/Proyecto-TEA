@@ -162,29 +162,33 @@ String getIP() {
   } else {
     Serial.printf("HTTPClient Error: %s\n", http_ip.errorToString(httpCode).c_str());
   }
+  http_ip.end();
+  return "";
 }
 
 String getTime(String ip) {
-  HTTPClient http_hora;
-  String api_IP = "https://timeapi.io/api/v1/time/current/ip?ipAddress=" + ip;
+  int intentos = 0;
+  while (intentos < 3) {
+    HTTPClient http_hora;
+    String api_IP = "https://timeapi.io/api/v1/time/current/ip?ipAddress=" + ip;
+    http_hora.begin(api_IP);
+    int httpCode = http_hora.GET();
 
-  http_hora.begin(api_IP);
-
-  int httpCode = http_hora.GET();
-
-  if (httpCode > 0) {
     if (httpCode == HTTP_CODE_OK) {
       String respuesta = http_hora.getString();
       StaticJsonDocument<256> doc;
       deserializeJson(doc, respuesta);
       String time_unformat = doc["time"];
       time_unformat.replace(":", "");
-      String time_format = time_unformat.substring(0, 4);
-      return time_format;
+      http_hora.end();
+      return time_unformat.substring(0, 4);
     }
-  } else {
-    Serial.printf("HTTPClient Error: %s\n", http_hora.errorToString(httpCode).c_str());
+    http_hora.end();
+    intentos++;
+    Serial.print(".");
+    delay(1000);
   }
+  return "";
 }
 String wifiScan() {
   Serial.println("Buscando Redes...");
@@ -236,16 +240,16 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
     Serial.println("Conectado");
     Serial.println(WiFi.SSID());     //Imprime la red
     Serial.println(WiFi.localIP());  //Imprime la IP local de la ESP
+    publicIP = getIP();
+    Serial.println(publicIP);
+
+    hora = getTime(publicIP);
+    Serial.println(hora);
   } else {
     Serial.println("Error al conectar.");
     Serial.println("La conexión tardo demasiado, vefifique la contraseña e intentelo nuevmente");
     WiFi.disconnect();
   }
-  publicIP = getIP();
-  Serial.println(publicIP);
-
-  hora = getTime(publicIP);
-  Serial.println(hora);
 }
 
 void statusPOST(const char *IP, const bool status) {  //Recibe la IP y el valor de la alerta
@@ -383,6 +387,7 @@ void setup() {
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
+  //wifiConnect("TATAN_ARDILA","91011814");
   //***********************
   //Inicializacion de pines
   //***********************
@@ -455,7 +460,7 @@ void setup() {
 //-------------------------------------------------------------------------------------------
 void loop() {
   unsigned long Tiempo = millis();
-  if (Tiempo - Tiempo_Anterior >= 60000 && publicIP != "") {
+  if (Tiempo - Tiempo_Anterior >= 6000 && publicIP != "") {
     Tiempo_Anterior = Tiempo;
     hora = getTime(publicIP);
     Serial.println(hora);
