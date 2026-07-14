@@ -19,6 +19,7 @@
 String wifiScan();                                     //Forward Declaration
 void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
 unsigned long Tiempo_Anterior = 0;
+const char *authIP="https://teapp.lat/auth/auth.php";
 String wifi_pass = "";
 String wifi_ssid = "";
 String publicIP = "";
@@ -252,35 +253,31 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
   }
 }
 
-void statusPOST(const char *IP, const bool status) {  //Recibe la IP y el valor de la alerta
-  HTTPClient http;                                    //Iniciamos el objeto
+void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //Recibe la IP y el valor de la alerta
+  HTTPClient http_info;                                    //Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
-  http.begin(IP);  //Conectar al servidor
+  http.begin(authIP);  //Conectar al servidor
 
   Serial.println("Haciendo POST");
 
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  http.addHeader("USER", User);
+  http.addHeader("TOKEN", Token);
+  info=BPMprom.toString()+HVRprom.toString()+superficie.toString()+status.toString();
+  int httpCode = http.POST(info);
 
-  String alerta = "status=" + String(status);  //Solo recibe String
-
-  int httpCode = http.POST(alerta);
-
-  if (httpCode > 0) {  //Evita los errores de HTTPClient
+  if (httpCode > 0) {
     Serial.print("httpCode= ");
     Serial.println(httpCode);
-
-    if (httpCode == HTTP_CODE_OK) {
-      String respuesta = http.getString();
-      //Guarda la respuesta
-      Serial.println("Respuesta: ");
-      Serial.println(respuesta);
-    }
+   String respuesta = http.getString();
+    Serial.println("Respuesta: ");
+    Serial.println(respuesta);
+  
   } else {
     Serial.printf("HTTPClient Error: %s\n", http.errorToString(httpCode).c_str());
   }
 
-  http.end();
+  http_info.end();
 }
 //********************************
 //Librerias Frecuencia & Variables
@@ -387,6 +384,8 @@ void setup() {
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
+  delay(1000)
+  Serial.println(ESP.getFreeHeap());
   //wifiConnect("TATAN_ARDILA","91011814");
   //***********************
   //Inicializacion de pines
@@ -459,8 +458,11 @@ void setup() {
 }
 //-------------------------------------------------------------------------------------------
 void loop() {
+  //***************
+  //Obtiene la Hora
+  //***************
   unsigned long Tiempo = millis();
-  if (Tiempo - Tiempo_Anterior >= 6000 && publicIP != "") {
+  if (Tiempo - Tiempo_Anterior >= 30000 && publicIP != "") {
     Tiempo_Anterior = Tiempo;
     hora = getTime(publicIP);
     Serial.println(hora);
@@ -471,7 +473,7 @@ void loop() {
   Sensor_Cardiaco.check();
   long Valor_Presencia = Sensor_Cardiaco.getIR();
   if (Tocando_Piel != Tocando_Piel_Aneterior) {
-    //Hacer post de q el sensor no esta detectando
+    infoPOST(-1,-1,0,-1);
   }
   if (Valor_Presencia < 50000) {
     digitalWrite(Led_Rojo, HIGH);
