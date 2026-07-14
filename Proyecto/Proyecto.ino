@@ -100,15 +100,12 @@ class WifiCredChar_Callback : public BLECharacteristicCallbacks {
 class UserTokenChar_Callback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pChar) {
     String valor = pChar->getValue();
-    UserToken_Buffer+=valor;
-    if (UserToken_Buffer.indexOf("\n")!= -1){
-      UserToken_Buffer.trim();
-      int separador = UserToken_Buffer.indexOf(",");
-      User = UserToken.substring(0, separador);
-      Token = UserToken.substring(separador + 1);
-      Serial.println(User);
-      Serial.println(Token);
-    }
+    UserToken = valor.c_str();
+    int separador = UserToken.indexOf(",");
+    User = UserToken.substring(0, separador);
+    Token = UserToken.substring(separador + 1);
+    Serial.println(User);
+    Serial.println(Token);
   }
 };
 //*********************
@@ -462,13 +459,15 @@ void setup() {
 //-------------------------------------------------------------------------------------------
 void loop() {
   if (WiFi.status() == WL_CONNECTED && cota < 3) {
+    Serial.println(User);
+    Serial.print("User: ");
+    Serial.println(Token);
+    Serial.print("Token: ");
     infoPOST(120, 60, 1, 0);
-    delay(1000);
-    infoPOST(100, 70, 0, 1);
     delay(1000);
     infoPOST(-1, -1, 1, 1);
     delay(1000);
-    cota = cota + 1;
+    cota +=1;
   }
   //***************
   //Obtiene la Hora
