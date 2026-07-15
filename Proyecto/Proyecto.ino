@@ -105,6 +105,7 @@ class UserTokenChar_Callback : public BLECharacteristicCallbacks {
     User = UserToken.substring(0, separador);
     Token = UserToken.substring(separador + 1);
     Token.trim();
+    User.trim();
     Serial.println(User);
     Serial.println(Token);
   }
@@ -255,7 +256,7 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
   }
 }
 
-void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //§Recibe la IP y el valor de la alerta
+void infoPOST(float BPMprom, float HVRprom, bool superficie, String status) {  //§Recibe la IP y el valor de la alerta
   HTTPClient http_info;                                                      //Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
@@ -265,9 +266,6 @@ void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //�
 
   http_info.addHeader("USER", User);
   http_info.addHeader("TOKEN", Token);
-  //Serial.println(User);
-  Serial.println(Token);
-  //http_info.addHeader("Content-Type", "application/octet-stream");
   String info = String(BPMprom) + ";" + String(HVRprom) + ";" + String(superficie) + ";" + String(status);
   Serial.println(info);
   int httpCode = http_info.POST(info);
@@ -385,12 +383,18 @@ float Promedio_Anterior_Movimiento = 0;
 int Esta_Quieto = 0;
 std::vector<float> Capturar_Movimiento;
 //-------------------------------------------------------------------------------------------
+
+//****************
+//Variables alerta
+//****************
+String AlertaVar="";
+float Promedio_HVR_Estres_Global=0;
+
 void setup() {
   Serial.begin(115200);
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
-  //wifiConnect("A56Prueba","11223345");
   //***********************
   //Inicializacion de pines
   //***********************
@@ -466,7 +470,7 @@ void loop() {
   //Obtiene la Hora
   //***************
   unsigned long Tiempo = millis();
-  if (Tiempo - Tiempo_Anterior >= 30000 && publicIP != "") {
+  if (Tiempo - Tiempo_Anterior >= 300000 && publicIP != "") {
     Tiempo_Anterior = Tiempo;
     hora = getTime(publicIP);
     Serial.println(hora);
@@ -480,7 +484,7 @@ void loop() {
     Serial.println("Piel!");
     Serial.println(User);
     Serial.println(Token);
-    infoPOST(-1, -1, 0, -1);
+    infoPOST(-1, -1, Tocando_Piel,"-1");
   }
   if (Valor_Presencia < 50000) {
     digitalWrite(Led_Rojo, HIGH);
@@ -570,10 +574,12 @@ void loop() {
           Promedio_HVR_Estres /= Capturar_HVR.size();
           if (HVR_Primitivo == true) {
             Promedio_Basal_HVR = Promedio_HVR_Estres;
+            Promedio_HVR_Estres_Global=Promedio_HVR_Estres;
             HVR_Primitivo = false;
           }
           if (Dia_1 == true && Promedio_Basal_HVR < Promedio_HVR_Estres && Hora_Actual < Hora_Dormir - 30) {
             Promedio_Basal_HVR = Promedio_HVR_Estres;
+            Promedio_HVR_Estres_Global=Promedio_HVR_Estres;
           }
           Capturar_HVR.clear();
           int Promediar_Estres = fabs(Promedio_HVR_Estres - Promedio_Basal_HVR);
@@ -581,11 +587,14 @@ void loop() {
           if (Desviacion_HVR <= 15) {
             Serial.println("<---- Estado HVR Tranquilo");
             Reset_Contador_Estres++;
+            AlertaVar+="0";
           } else if (Desviacion_HVR <= 30) {
             Serial.println("<---- Estado HVR Intranquilo");
+            AlertaVar+="1";
           } else if (Desviacion_HVR > 30) {
             Serial.println("<---- Estado HVR Alerta ");
             Contador_Estres++;
+            AlertaVar+="2";
           }
           Serial.println(Desviacion_HVR);
           Serial.println(Promediar_Estres);
@@ -621,13 +630,19 @@ void loop() {
           if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 8) {
             Serial.println("<---- Estado BMP Tranquilo");
             Reset_Contador_BMP_Alerta++;
+            AlertaVar+="0";
           } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 20) {
             Serial.println("<---- Estado BMP Intranquilo");
+            AlertaVar+="1";
           } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) > 20) {
             Serial.println("<---- Estado BMP Alerta");
             Contador_BMP_Alerta++;
+            AlertaVar+="2";
           }
           Serial.println(fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM));
+          AlertaVar+="0";
+          infoPOST(Promedio_BPM_Alerta,Promedio_HVR_Estres_Global,Tocando_Piel,AlertaVar);
+          AlertaVar="";
         }
       }
       // Capturar el movimiento del ususario y compararlo con el anterior para saber si esta en movimiento
