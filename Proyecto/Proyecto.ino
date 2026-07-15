@@ -104,6 +104,7 @@ class UserTokenChar_Callback : public BLECharacteristicCallbacks {
     int separador = UserToken.indexOf(",");
     User = UserToken.substring(0, separador);
     Token = UserToken.substring(separador + 1);
+    Token.trim();
     Serial.println(User);
     Serial.println(Token);
   }
@@ -254,7 +255,7 @@ void wifiConnect(const char *ssid, const char *pass) {  //Toma como parametros e
   }
 }
 
-void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //Recibe la IP y el valor de la alerta
+void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //§Recibe la IP y el valor de la alerta
   HTTPClient http_info;                                                      //Iniciamos el objeto
 
   Serial.println("Conectando al servidor...");
@@ -264,6 +265,9 @@ void infoPOST(float BPMprom, float HVRprom, bool superficie, bool status) {  //R
 
   http_info.addHeader("USER", User);
   http_info.addHeader("TOKEN", Token);
+  //Serial.println(User);
+  Serial.println(Token);
+  //http_info.addHeader("Content-Type", "application/octet-stream");
   String info = String(BPMprom) + ";" + String(HVRprom) + ";" + String(superficie) + ";" + String(status);
   Serial.println(info);
   int httpCode = http_info.POST(info);
@@ -386,7 +390,7 @@ void setup() {
 
   WiFi.mode(WIFI_STA);       // Poner en modo station a la ESP
   wifi_start_credentials();  //Llama al BLE
-  //wifiConnect("TATAN_ARDILA","91011814");
+  //wifiConnect("A56Prueba","11223345");
   //***********************
   //Inicializacion de pines
   //***********************
@@ -458,17 +462,6 @@ void setup() {
 }
 //-------------------------------------------------------------------------------------------
 void loop() {
-  if (WiFi.status() == WL_CONNECTED && cota < 3) {
-    Serial.println(User);
-    Serial.print("User: ");
-    Serial.println(Token);
-    Serial.print("Token: ");
-    infoPOST(120, 60, 1, 0);
-    delay(1000);
-    infoPOST(-1, -1, 1, 1);
-    delay(1000);
-    cota +=1;
-  }
   //***************
   //Obtiene la Hora
   //***************
@@ -484,6 +477,9 @@ void loop() {
   Sensor_Cardiaco.check();
   long Valor_Presencia = Sensor_Cardiaco.getIR();
   if (Tocando_Piel != Tocando_Piel_Aneterior) {
+    Serial.println("Piel!");
+    Serial.println(User);
+    Serial.println(Token);
     infoPOST(-1, -1, 0, -1);
   }
   if (Valor_Presencia < 50000) {
