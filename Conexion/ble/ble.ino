@@ -31,7 +31,9 @@ class Char_Callback : public BLECharacteristicCallbacks {
     Serial.println(valor.c_str());
   }
   void onRead(BLECharacteristic *pChar) {
-    Serial.println("El cliente leyo la caracteristica");
+    String valor = pChar->getValue();
+    Serial.print("Leyó:");
+    Serial.println(valor.c_str());
   }
 };
 
