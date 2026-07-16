@@ -376,7 +376,6 @@ int Picos_De_Frecuencia = 0;
 std::vector<int> Recopilador_Cardiaco;
 const unsigned long Tiempo_Esperando_Sueño = 600000;
 const unsigned long Tiempo_Capturando_Sueño = 12000;
-const unsigned long Tiempo_De_Espera_Datos = 15000;
 unsigned long Tiempo_Comparacion_Sueño = 0;
 bool Esta_Dormido = false;
 enum Estado_Datos_Dormido {
