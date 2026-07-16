@@ -374,8 +374,8 @@ float Guardar_Recuperar_BPM[7];
 //*********************************
 int Picos_De_Frecuencia = 0;
 std::vector<int> Recopilador_Cardiaco;
-const unsigned long Tiempo_Esperando_Sueño = 15000;
-const unsigned long Tiempo_Capturando_Sueño = 15000;
+const unsigned long Tiempo_Esperando_Sueño = 600000;
+const unsigned long Tiempo_Capturando_Sueño = 12000;
 const unsigned long Tiempo_De_Espera_Datos = 15000;
 unsigned long Tiempo_Comparacion_Sueño = 0;
 bool Esta_Dormido = false;
@@ -614,14 +614,14 @@ void loop() {
       //********************************************
       // Procesamiento de variaciones rápidas de BPM
       //********************************************
-      if (Promedio_Basal_BPM != 0 || BMP_Primitivo == true) {
+      if (Promedio_Basal_BPM >= 45 || BMP_Primitivo == true) {
         if (Capturar_BPM.size() < 11) {
           Capturar_BPM.push_back(BPM);
         } else {
           float Promedio_BPM_Alerta = 0;
           int Picos_BPM = 0;
           for (int i = 0; i < Capturar_BPM.size() - 1; i++) {
-            if (fabs(Capturar_BPM[i] - Capturar_BPM[i + 1]) > 30) {
+            if (fabs(Capturar_BPM[i] - Capturar_BPM[i + 1]) > 10) {
               Picos_BPM++;
             } else {
               Promedio_BPM_Alerta += Capturar_BPM[i];
@@ -629,7 +629,7 @@ void loop() {
           }
           if ((Capturar_BPM.size() - Picos_BPM) > 0) {
             Promedio_BPM_Alerta /= (Capturar_BPM.size() - Picos_BPM);
-            if (BMP_Primitivo == true) {
+            if (BMP_Primitivo == true && Promedio_BPM_Alerta > 45) {
               Promedio_Basal_BPM = Promedio_BPM_Alerta;
               BMP_Primitivo = false;
             }
@@ -642,9 +642,9 @@ void loop() {
             Serial.println("<---- Estado BMP Tranquilo");
             Reset_Contador_BMP_Alerta++;
             AlertaVar+="0";
-          } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 20) {
+          } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 25) {
             Serial.println("<---- Estado BMP Intranquilo");
-          } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) > 20) {
+          } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) > 25) {
             Serial.println("<---- Estado BMP Alerta");
             Contador_BMP_Alerta++;
             AlertaVar+="1";
