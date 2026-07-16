@@ -15,10 +15,12 @@
 #define WIFI_START_SERV_UUID "897DC0D1-1C3A-4567-BF0E-1EDB5DD83855"  //UUID para el BLE
 #define WIFI_START_CHAR_UUID "03FE09DA-15E3-43B4-9C1B-47A7DA1AC992"  //UUID para el BLE
 #define USER_TOKEN_CHAR_UUID "2DA7E879-F0D5-4E74-8317-E40A5D87413C"
+#define HORA_DORMIR_CHAR_UUID "7009B792-356A-4B4A-BAA1-FF4C1F5FF601"
 
 String wifiScan();                                     //Forward Declaration
 void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
 unsigned long Tiempo_Anterior = 0;
+int Hora_Dormir = 2000;
 const char *authIP = "https://teapp.lat/auth/auth.php";
 String wifi_pass = "";
 String wifi_ssid = "";
@@ -39,6 +41,7 @@ BLECharacteristic *pWifiCredChar = nullptr;
 BLECharacteristic *pPassCredChar = nullptr;
 BLECharacteristic *pWifiStartChar = nullptr;
 BLECharacteristic *pUserTokenChar = nullptr;
+BLECharacteristic *pHoraDormirChar = nullptr;
 //*********************
 //Callback del servidor
 //*********************
@@ -110,6 +113,13 @@ class UserTokenChar_Callback : public BLECharacteristicCallbacks {
     Serial.println(Token);
   }
 };
+class HoraDormirChar_Callback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pChar) {
+    String valor = pChar->getValue();
+    Hora_Dormir=valor.toInt();
+    Serial.println(Hora_Dormir);
+  }
+};
 //*********************
 //Función principal BLE
 //*********************
@@ -135,12 +145,15 @@ void wifi_start_credentials() {
   pWifiCredChar = pWifiCredService->createCharacteristic(WIFI_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pPassCredChar = pWifiCredService->createCharacteristic(PASS_CRED_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
   pUserTokenChar = pWifiCredService->createCharacteristic(USER_TOKEN_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pHoraDormirChar = pWifiCredService->createCharacteristic(HORA_DORMIR_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
   pWifiCredChar->setCallbacks(new WifiCredChar_Callback());
   pPassCredChar->setCallbacks(new WifiCredChar_Callback());
   pUserTokenChar->setCallbacks(new UserTokenChar_Callback());
+  pHoraDormirChar->setCallbacks(new HoraDormirChar_Callback());
   pWifiCredChar->setValue("");
   pPassCredChar->setValue("");
   pUserTokenChar->setValue("");
+  pHoraDormirChar->setValue("");
   pWifiCredService->start();
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -308,7 +321,6 @@ Preferences preferences;
 //********
 // Horario
 //********
-int Hora_Dormir = 2000;
 int Hora_Actual = 1200;
 int Hora_Activacion = 1200;
 //*******************
@@ -388,7 +400,7 @@ std::vector<float> Capturar_Movimiento;
 //Variables alerta
 //****************
 String AlertaVar="";
-float Promedio_HVR_Estres_Global=0;
+float Promedio_HVR_Estres = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -475,6 +487,8 @@ void loop() {
     hora = getTime(publicIP);
     Serial.println(hora);
   }
+  /*Serial.println(Hora_Dormir);
+  delay(2000);*/
   //******************************************
   //Deteccion de presencia sobre el sensor MAX
   //******************************************
@@ -562,7 +576,7 @@ void loop() {
         if (Capturar_HVR.size() < 11) {
           Capturar_HVR.push_back(HVR);
         } else {
-          float Promedio_HVR_Estres = 0;
+          Promedio_HVR_Estres = 0;
           for (int i = 0; i < Capturar_HVR.size() - 1; i++) {
             Capturar_HVR[i] = fabs(Capturar_HVR[i] - Capturar_HVR[i + 1]);
             if (Capturar_HVR[i] < Promedio_Basal_HVR + Nivel_Superior_HVR) {
@@ -574,12 +588,10 @@ void loop() {
           Promedio_HVR_Estres /= Capturar_HVR.size();
           if (HVR_Primitivo == true) {
             Promedio_Basal_HVR = Promedio_HVR_Estres;
-            Promedio_HVR_Estres_Global=Promedio_HVR_Estres;
             HVR_Primitivo = false;
           }
           if (Dia_1 == true && Promedio_Basal_HVR < Promedio_HVR_Estres && Hora_Actual < Hora_Dormir - 30) {
             Promedio_Basal_HVR = Promedio_HVR_Estres;
-            Promedio_HVR_Estres_Global=Promedio_HVR_Estres;
           }
           Capturar_HVR.clear();
           int Promediar_Estres = fabs(Promedio_HVR_Estres - Promedio_Basal_HVR);
@@ -590,11 +602,10 @@ void loop() {
             AlertaVar+="0";
           } else if (Desviacion_HVR <= 30) {
             Serial.println("<---- Estado HVR Intranquilo");
-            AlertaVar+="1";
           } else if (Desviacion_HVR > 30) {
             Serial.println("<---- Estado HVR Alerta ");
             Contador_Estres++;
-            AlertaVar+="2";
+            AlertaVar+="1";
           }
           Serial.println(Desviacion_HVR);
           Serial.println(Promediar_Estres);
@@ -633,15 +644,14 @@ void loop() {
             AlertaVar+="0";
           } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) <= 20) {
             Serial.println("<---- Estado BMP Intranquilo");
-            AlertaVar+="1";
           } else if (fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM) > 20) {
             Serial.println("<---- Estado BMP Alerta");
             Contador_BMP_Alerta++;
-            AlertaVar+="2";
+            AlertaVar+="1";
           }
           Serial.println(fabs(Promedio_BPM_Alerta - Promedio_Basal_BPM));
           AlertaVar+="0";
-          infoPOST(Promedio_BPM_Alerta,Promedio_HVR_Estres_Global,Tocando_Piel,AlertaVar);
+          infoPOST(Promedio_BPM_Alerta,Promedio_HVR_Estres,Tocando_Piel,AlertaVar);
           AlertaVar="";
         }
       }
