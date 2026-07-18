@@ -75,6 +75,28 @@ String UserToken = "";
 String User = "";
 String Token = "";
 bool superficie = 0;
+
+// --- Infraestructura de red en segundo plano (optimización) ---
+// El formato del POST (campos y separadores ";") NO CAMBIA. Lo que cambia
+// es que ni el POST ni la conexión WiFi se ejecutan más en el loop()
+// principal ni en el callback de BLE: antes, infoPOST() bloqueaba el loop
+// (y con él, la lectura de sensores/motor/LEDs) varios segundos cada 5
+// latidos si la red estaba lenta, y wifiConnect()/getTime() bloqueaban el
+// callback de BLE hasta 10+ segundos con sus delay(). Ahora una tarea de
+// FreeRTOS de baja prioridad hace ese trabajo aparte.
+struct Datos_Post {
+  float Bpm;
+  float Hvr;
+  bool Superficie;
+  char Alertas[8];
+  float Fuerza_Golpe;
+};
+QueueHandle_t Cola_Post = NULL;
+TaskHandle_t Handle_Tarea_Red = NULL;
+
+volatile bool Solicitud_Wifi_Pendiente = false;
+String Solicitud_Wifi_Ssid = "";
+String Solicitud_Wifi_Pass = "";
 // ============================================================================
 // 4.A OBJETOS DE HARDWARE
 // ============================================================================
@@ -257,7 +279,13 @@ class WifiCredChar_Callback : public BLECharacteristicCallbacks {
       wifi_pass = valor;
       Serial.println(wifi_ssid);
       Serial.println(wifi_pass);
-      wifiConnect(wifi_ssid.c_str(), wifi_pass.c_str());
+      // Antes: wifiConnect() se llamaba aquí mismo, bloqueando el callback
+      // de BLE hasta 10+ segundos (WiFi.begin + reintentos + getIP + getTime,
+      // todos con delay()). Ahora solo se deja la solicitud marcada; la
+      // tarea de red la procesa fuera del hilo de BLE.
+      Solicitud_Wifi_Ssid = wifi_ssid;
+      Solicitud_Wifi_Pass = wifi_pass;
+      Solicitud_Wifi_Pendiente = true;
     }
   }
   void onRead(BLECharacteristic *pChar) {
@@ -400,23 +428,39 @@ String wifiScan() {
   int min_rssi = -80;
   byte redes_totales = 0;
   byte redes = WiFi.scanNetworks();  //Cantidad de redes encontradas
+  String wifi_list = "";
+
   if (redes == 0) {
     Serial.println("No se encontraron redes.");
-  } else {
-    for (int i = 0; i < redes; i++) {  //Recorre las redes
-      if (WiFi.RSSI(i) > min_rssi) {
-        redes_totales += 1;
-      }
-    }
-    Serial.print(redes_totales);
-    Serial.println(" Redes encontradas");
-    String wifi_list = "";
-    for (int i = 0; i < redes_totales; i++) {
-      wifi_list += WiFi.SSID(i) + "," + WiFi.RSSI(i);
-      if (i < redes - 2) wifi_list += "|";
-    }
+    // Bugfix: antes esta rama no tenía return en una función que devuelve
+    // String -> comportamiento indefinido (la función "caía" sin devolver
+    // nada). Ahora devuelve explícitamente una cadena vacía.
     return wifi_list;
   }
+
+  for (int i = 0; i < redes; i++) {  //Recorre las redes
+    if (WiFi.RSSI(i) > min_rssi) {
+      redes_totales += 1;
+    }
+  }
+  Serial.print(redes_totales);
+  Serial.println(" Redes encontradas");
+
+  // Bugfix: el bucle original recorría los primeros `redes_totales` ÍNDICES
+  // del escaneo sin volver a aplicar el filtro de RSSI, así que podía
+  // incluir redes débiles que ya se habían descartado del conteo. Y el
+  // separador "|" comparaba contra `redes` (el total sin filtrar) en vez
+  // de `redes_totales`, dejando un separador de más o de menos al final.
+  // El FORMATO de salida (SSID,RSSI separados por "|") es idéntico al de
+  // antes — solo cambia qué redes entran y dónde va cada separador.
+  int Redes_Agregadas = 0;
+  for (int i = 0; i < redes; i++) {
+    if (WiFi.RSSI(i) <= min_rssi) continue;
+    if (Redes_Agregadas > 0) wifi_list += "|";
+    wifi_list += WiFi.SSID(i) + "," + WiFi.RSSI(i);
+    Redes_Agregadas++;
+  }
+  return wifi_list;
 }
 void wifiDisconnect() {
   if (WiFi.status() == WL_CONNECTED) {
@@ -482,6 +526,30 @@ void infoPOST(float BPMprom, float HVRprom, bool superficie, String alertas, flo
   }
   http_info.end();
 }
+
+// ============================================================================
+// 7.b TAREA DE RED EN SEGUNDO PLANO (optimización de conectividad)
+// ============================================================================
+// Consume la cola de telemetría (Cola_Post) y procesa las solicitudes de
+// conexión WiFi pendientes, todo FUERA del loop() principal y FUERA del
+// hilo de callbacks de BLE. infoPOST() y wifiConnect() no cambiaron una
+// sola línea de cómo arman el POST/GET — solo cambió QUIÉN los llama y
+// CUÁNDO, para que nunca bloqueen la lectura de sensores ni el stack BLE.
+void Tarea_Red(void *Parametro) {
+  Datos_Post Dato;
+  for (;;) {
+    if (Solicitud_Wifi_Pendiente) {
+      wifiConnect(Solicitud_Wifi_Ssid.c_str(), Solicitud_Wifi_Pass.c_str());
+      Solicitud_Wifi_Pendiente = false;
+    }
+    // Espera hasta 200ms por un dato de telemetría; si no llega nada, vuelve
+    // a revisar si hay una solicitud de WiFi pendiente. No consume CPU en
+    // un bucle ocupado (xQueueReceive bloquea la tarea mientras espera).
+    if (xQueueReceive(Cola_Post, &Dato, pdMS_TO_TICKS(200)) == pdTRUE) {
+      infoPOST(Dato.Bpm, Dato.Hvr, Dato.Superficie, String(Dato.Alertas), Dato.Fuerza_Golpe);
+    }
+  }
+}
 // ============================================================================
 // 8. ESTRUCTURA COMPARTIDA CON LA TAREA DEL MPU6050 (FreeRTOS)
 // ============================================================================
@@ -501,6 +569,16 @@ SemaphoreHandle_t Mutex_Mpu;
 // mismo tiempo, lo que produce cuelgues silenciosos del sistema.
 SemaphoreHandle_t Mutex_I2c;
 TaskHandle_t Handle_Tarea_Mpu = NULL;
+
+// --- Supresión de impacto durante la vibración del motor (bug reportado) ---
+// El motor vibrador está montado en la misma estructura rígida que el
+// MPU6050: cuando vibra, produce su PROPIA aceleración, que el acelerómetro
+// no puede distinguir de un golpe externo real. Mientras el motor esté
+// activo, se ignoran los picos de Delta_G para no confundir "me estoy
+// vibrando a mí mismo" con "me golpearon". Declarada aquí (temprano) porque
+// Tarea_Leer_Mpu, más abajo, la necesita antes en el archivo — mismo motivo
+// que las otras variables que tuvieron que moverse por esto.
+volatile bool Ignorar_Impactos_Por_Motor = false;
 
 // AJUSTAR: umbral de delta-G para considerar "golpe" (impacto físico)
 const float Umbral_Impacto_G = 2.2;
@@ -623,7 +701,7 @@ void Tarea_Leer_Mpu(void *Parametro) {
         Ultimo_Dato_Mpu.Movimiento_Alto = (Magnitud_G > Umbral_Artefacto_Movimiento_G);
         Ultimo_Dato_Mpu.Marca_Tiempo_Ms = millis();
 
-        if (Delta_G > Umbral_Impacto_G) {
+        if (Delta_G > Umbral_Impacto_G && !Ignorar_Impactos_Por_Motor) {
           Ultimo_Dato_Mpu.Impacto_Detectado = true;
           Ultimo_Dato_Mpu.Fuerza_Pico_Impacto = Magnitud_G;
         }
@@ -948,7 +1026,7 @@ Datos_Movimiento Actual_Envio_Golpe;
             break;
     }
     String AlertasPOST="";
-    ctual_Envio_Golpe.Fuerza_Pico_Impacto = Ultimo_Dato_Mpu.Fuerza_Pico_Impacto;
+    Actual_Envio_Golpe.Fuerza_Pico_Impacto = Ultimo_Dato_Mpu.Fuerza_Pico_Impacto;
     AlertasPOST+= Numero_Estres;
     if ( Actual_Envio_Golpe.Fuerza_Pico_Impacto != Anterior_Golpe_Fuerza){
         Anterior_Golpe_Fuerza = Actual_Envio_Golpe.Fuerza_Pico_Impacto = Ultimo_Dato_Mpu.Fuerza_Pico_Impacto;
@@ -957,7 +1035,22 @@ Datos_Movimiento Actual_Envio_Golpe;
     else{
         AlertasPOST+="0";
     }
-    infoPOST(Bpm_Actual,Hrv_Rmssd_Actual,superficie,AlertasPOST,Actual_Envio_Golpe.Fuerza_Pico_Impacto);
+    // Antes: infoPOST(...) se llamaba aquí mismo, bloqueando el loop
+    // principal (sensores, motor, LEDs) durante todo el round-trip HTTP.
+    // Ahora se encola el dato y la Tarea_Red lo envía aparte, con el mismo
+    // contenido y el mismo formato de siempre.
+    Datos_Post Dato_A_Enviar;
+    Dato_A_Enviar.Bpm = Bpm_Actual;
+    Dato_A_Enviar.Hvr = Hrv_Rmssd_Actual;
+    Dato_A_Enviar.Superficie = superficie;
+    AlertasPOST.toCharArray(Dato_A_Enviar.Alertas, sizeof(Dato_A_Enviar.Alertas));
+    Dato_A_Enviar.Fuerza_Golpe = Actual_Envio_Golpe.Fuerza_Pico_Impacto;
+    if (Cola_Post == NULL || xQueueSend(Cola_Post, &Dato_A_Enviar, 0) != pdTRUE) {
+      // No bloqueante a propósito: si la cola está llena (la tarea de red
+      // no da abasto, ej. sin WiFi), se descarta este envío puntual en vez
+      // de congelar el loop esperando espacio.
+      Serial.println(F("[POST] Cola llena o no inicializada; se descarta este envio."));
+    }
     Contador_Envio = 0;
   }
 }
@@ -1029,6 +1122,7 @@ const float Motor_Factor_Alargamiento = 1.02; // AJUSTAR: qué tan rápido se re
 
 void Iniciar_Biofeedback() {
   Motor_Activo = true;
+  Ignorar_Impactos_Por_Motor = true;
   // Arranca con el intervalo real del latido actual (imita la aceleración)
   Motor_Periodo_Actual_Ms = (Bpm_Actual > 0) ? (unsigned long)(60000.0 / Bpm_Actual) : 800;
   Motor_Pulso_En_Alto = false;
@@ -1038,6 +1132,7 @@ void Iniciar_Biofeedback() {
 void Detener_Biofeedback() {
   Motor_Activo = false;
   digitalWrite(Pin_Motor, LOW);
+  Ignorar_Impactos_Por_Motor = false;
 }
 
 void Actualizar_Biofeedback() {
@@ -1309,8 +1404,15 @@ void setup() {
   // --- Tarea FreeRTOS del MPU (independiente del loop principal) ---
   xTaskCreate(Tarea_Leer_Mpu, "Tarea_Mpu", 4096, NULL, 3, &Handle_Tarea_Mpu);
 
+  // --- Tarea FreeRTOS de red (POST/GET en segundo plano) ---
+  // Prioridad baja (1): nunca debe competir con la lectura de sensores.
+  // Stack de 8192 bytes: las operaciones HTTPS consumen bastante pila
+  // (manejo de certificados/TLS), 4096 se queda corto y puede crashear.
+  Cola_Post = xQueueCreate(5, sizeof(Datos_Post));
+  xTaskCreate(Tarea_Red, "Tarea_Red", 8192, NULL, 1, &Handle_Tarea_Red);
+
   // --- BLE ---
-  // Desactivado por ahora (ver sección 18 más arriba).
+  // (ya se inicializó arriba, vía BLE_Start())
 
   // --- Datos basales ---
   Cargar_Y_Mostrar_Datos_Basales();
