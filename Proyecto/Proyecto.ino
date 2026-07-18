@@ -30,7 +30,6 @@ String UserToken = "";
 String UserToken_Buffer="";
 String User = "";
 String Token = "";
-int cota=0;
 //***************
 //Objetos del BLE
 //***************
