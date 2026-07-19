@@ -981,7 +981,7 @@ bool Procesar_Lectura_Cardiaca(bool Hay_Movimiento_Alto) {
   if (Valor_Ir < 50000) {
     digitalWrite(Pin_Led_Rojo, HIGH);
     superficie = 0;
-    //infoPOST();
+    infoPOST(-1,-1,Dato.Superficie,"00",0.0);
     return false; // sin contacto con la piel
   }
   if (!checkForBeat(Valor_Ir)) return false;
