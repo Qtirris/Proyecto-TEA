@@ -580,8 +580,30 @@ TaskHandle_t Handle_Tarea_Mpu = NULL;
 // que las otras variables que tuvieron que moverse por esto.
 volatile bool Ignorar_Impactos_Por_Motor = false;
 
-// AJUSTAR: umbral de delta-G para considerar "golpe" (impacto físico)
+// AJUSTAR: umbral de delta-G para golpes contra superficies rígidas (mesa,
+// pared) — un salto brusco entre dos muestras de 20ms.
 const float Umbral_Impacto_G = 2.2;
+
+// AJUSTAR: umbral de MAGNITUD ABSOLUTA (no delta) para autogolpes. Un golpe
+// contra el propio cuerpo se amortigua con el tejido: el pico es más bajo
+// y se reparte en más tiempo que contra una superficie rígida, así que el
+// salto instantáneo (Delta_G) puede no alcanzar Umbral_Impacto_G aunque el
+// golpe sea real. Este umbral, más bajo, dispara con solo alcanzar esta
+// magnitud, sin exigir un salto brusco de una muestra a la siguiente.
+//
+// TRADE-OFF que le señalo: al ser más bajo, este umbral también puede
+// dispararse con movimientos normales de brazo (gesticular, ejercicio) que
+// no son ni golpes a superficies ni autogolpes. Pruébelo comparando
+// autogolpes reales contra movimientos cotidianos y ajuste el valor según
+// lo que separe mejor unos de otros en su caso — 1.8 es un punto de
+// partida, no un valor validado.
+const float Umbral_Impacto_Absoluto_G = 1.8;
+
+// Período de "enfriamiento" tras registrar un impacto: un solo golpe físico
+// abarca varias muestras de 20ms mientras la aceleración sube y baja: sin
+// esto, un mismo golpe se contaría como varios impactos separados.
+const unsigned long Refractario_Impacto_Ms = 150;
+
 // AJUSTAR: magnitud por encima de la cual se considera artefacto de movimiento
 // para descartar muestras de BPM/HRV (reposo normal ronda 1.0 G)
 const float Umbral_Artefacto_Movimiento_G = 1.35;
@@ -674,6 +696,10 @@ void Recuperar_Bus_I2c() {
 void Tarea_Leer_Mpu(void *Parametro) {
   sensors_event_t Evento_Accel, Evento_Giro, Evento_Temp;
   float Magnitud_Anterior_G = 1.0;
+  // Persiste entre iteraciones del for(;;) porque está declarada fuera de
+  // él (igual que Magnitud_Anterior_G) — no necesita ser 'static' porque
+  // esta función nunca retorna, así que su stack vive todo el tiempo.
+  unsigned long Marca_Ultimo_Impacto_Ms = 0;
   const TickType_t Periodo_Tarea = pdMS_TO_TICKS(20); // 50 Hz
   TickType_t Ultimo_Despertar = xTaskGetTickCount();
 
@@ -695,13 +721,34 @@ void Tarea_Leer_Mpu(void *Parametro) {
       float Magnitud_G = sqrt(Ax_G * Ax_G + Ay_G * Ay_G + Az_G * Az_G);
       float Delta_G = fabs(Magnitud_G - Magnitud_Anterior_G);
 
+      // --- Detección de impacto: DOS vías, no solo una ---
+      // Vía 1 (golpe rígido, mesa/pared): salto brusco de una muestra a la
+      // siguiente.
+      // Vía 2 (autogolpe, amortiguado por tejido): magnitud absoluta alta,
+      // sin exigir que el salto sea instantáneo.
+      // El período refractario evita que un mismo golpe físico (que dura
+      // varias muestras de 20ms mientras sube y baja la aceleración) se
+      // cuente como impactos separados.
+      bool Golpe_Rigido = (Delta_G > Umbral_Impacto_G);
+      bool Golpe_Amortiguado = (Magnitud_G > Umbral_Impacto_Absoluto_G);
+      unsigned long Ahora_Ms = millis();
+      bool Fuera_De_Refractario = (Ahora_Ms - Marca_Ultimo_Impacto_Ms) >= Refractario_Impacto_Ms;
+      bool Hay_Golpe_Nuevo = (Golpe_Rigido || Golpe_Amortiguado) &&
+                              !Ignorar_Impactos_Por_Motor && Fuera_De_Refractario;
+
+      if (Hay_Golpe_Nuevo) {
+        // Se actualiza aquí, fuera del mutex, para que el refractario
+        // funcione aunque el mutex esté ocupado ese ciclo puntual.
+        Marca_Ultimo_Impacto_Ms = Ahora_Ms;
+      }
+
       if (xSemaphoreTake(Mutex_Mpu, pdMS_TO_TICKS(5)) == pdTRUE) {
         Ultimo_Dato_Mpu.Magnitud_G = Magnitud_G;
         Ultimo_Dato_Mpu.Delta_Magnitud_G = Delta_G;
         Ultimo_Dato_Mpu.Movimiento_Alto = (Magnitud_G > Umbral_Artefacto_Movimiento_G);
-        Ultimo_Dato_Mpu.Marca_Tiempo_Ms = millis();
+        Ultimo_Dato_Mpu.Marca_Tiempo_Ms = Ahora_Ms;
 
-        if (Delta_G > Umbral_Impacto_G && !Ignorar_Impactos_Por_Motor) {
+        if (Hay_Golpe_Nuevo) {
           Ultimo_Dato_Mpu.Impacto_Detectado = true;
           Ultimo_Dato_Mpu.Fuerza_Pico_Impacto = Magnitud_G;
         }
@@ -934,7 +981,7 @@ bool Procesar_Lectura_Cardiaca(bool Hay_Movimiento_Alto) {
   if (Valor_Ir < 50000) {
     digitalWrite(Pin_Led_Rojo, HIGH);
     superficie = 0;
-    infoPOST(-1,-1,0,"-1",-1);
+    //infoPOST();
     return false; // sin contacto con la piel
   }
   if (!checkForBeat(Valor_Ir)) return false;
@@ -1039,17 +1086,23 @@ Datos_Movimiento Actual_Envio_Golpe;
     // principal (sensores, motor, LEDs) durante todo el round-trip HTTP.
     // Ahora se encola el dato y la Tarea_Red lo envía aparte, con el mismo
     // contenido y el mismo formato de siempre.
-    Datos_Post Dato_A_Enviar;
-    Dato_A_Enviar.Bpm = Bpm_Actual;
-    Dato_A_Enviar.Hvr = Hrv_Rmssd_Actual;
-    Dato_A_Enviar.Superficie = superficie;
-    AlertasPOST.toCharArray(Dato_A_Enviar.Alertas, sizeof(Dato_A_Enviar.Alertas));
-    Dato_A_Enviar.Fuerza_Golpe = Actual_Envio_Golpe.Fuerza_Pico_Impacto;
-    if (Cola_Post == NULL || xQueueSend(Cola_Post, &Dato_A_Enviar, 0) != pdTRUE) {
-      // No bloqueante a propósito: si la cola está llena (la tarea de red
-      // no da abasto, ej. sin WiFi), se descarta este envío puntual en vez
-      // de congelar el loop esperando espacio.
-      Serial.println(F("[POST] Cola llena o no inicializada; se descarta este envio."));
+    if (WiFi.status() != WL_CONNECTED) {
+      // Sin WiFi, encolar solo gastaría un espacio de la cola (capacidad 5)
+      // en un envío que va a fallar seguro. Se descarta aquí, más barato.
+      Serial.println(F("[POST] Sin WiFi conectado; se omite este envio."));
+    } else {
+      Datos_Post Dato_A_Enviar;
+      Dato_A_Enviar.Bpm = Bpm_Actual;
+      Dato_A_Enviar.Hvr = Hrv_Rmssd_Actual;
+      Dato_A_Enviar.Superficie = superficie;
+      AlertasPOST.toCharArray(Dato_A_Enviar.Alertas, sizeof(Dato_A_Enviar.Alertas));
+      Dato_A_Enviar.Fuerza_Golpe = Actual_Envio_Golpe.Fuerza_Pico_Impacto;
+      if (Cola_Post == NULL || xQueueSend(Cola_Post, &Dato_A_Enviar, 0) != pdTRUE) {
+        // No bloqueante a propósito: si la cola está llena (Tarea_Red va
+        // atrasada procesando envíos anteriores), se descarta este envío
+        // puntual en vez de congelar el loop esperando espacio.
+        Serial.println(F("[POST] Cola llena; se descarta este envio (posible retraso de red)."));
+      }
     }
     Contador_Envio = 0;
   }
