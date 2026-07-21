@@ -1432,12 +1432,6 @@ void setup() {
   digitalWrite(Pin_Motor, LOW);
 
   WiFi.mode(WIFI_STA); //Se inicia el modo Station del Wifi
-  WiFi_Credentials credenciales=Leer_Credenciales_WiFi();
-  Serial.println(credenciales.ssid);
-  Serial.println(credenciales.pass);
-  if (credenciales.ssid !="" && credenciales.pass !=""){
-    wifiConnect(credenciales.ssid.c_str(),credenciales.pass.c_str());
-  }
   BLE_Start();  //Se llama la función que inicia el BLE
   Serial.println(F("\n--- Iniciando Wearable Estres/Sueno (FSM) ---"));
 
@@ -1516,6 +1510,13 @@ void setup() {
     Serial.println(F("[FSM] -> Provisional_Calib (sin datos basales previos)"));
   } else {
     Estado_Actual = Sys_Init;
+  }
+  
+  WiFi_Credentials credenciales=Leer_Credenciales_WiFi();
+  Serial.println(credenciales.ssid);
+  Serial.println(credenciales.pass);
+  if (credenciales.ssid !="" && credenciales.pass !=""){
+    wifiConnect(credenciales.ssid.c_str(),credenciales.pass.c_str());
   }
 }
 
