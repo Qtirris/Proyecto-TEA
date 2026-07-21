@@ -66,7 +66,7 @@ const int Pin_Motor       = 3;
 // 3. CONFIGURACIÓN VARIABLES COMS
 // ============================================================================
 String wifiScan();                                     //Forward Declaration
-void wifiConnect(const char *ssid, const char *pass);  //Forward Declaration
+void wifiConnect(String ssid,String pass);  //Forward Declaration
 const char *authIP = "https://teapp.lat/auth/auth.php";
 String wifi_pass = "";
 String wifi_ssid = "";
@@ -93,8 +93,8 @@ struct Datos_Post {
   float Fuerza_Golpe;
 };
 struct WiFi_Credentials {
-  const char* ssid;
-  const char* pass;
+  String ssid;
+  String pass;
 };
 QueueHandle_t Cola_Post = NULL;
 TaskHandle_t Handle_Tarea_Red = NULL;
@@ -430,17 +430,25 @@ void Actualizar_Reloj_Simple() {
 // ============================================================================
 // 7. FUNCIONES COMS
 // ============================================================================
-void Guardar_Credenciales_WiFi(const char *ssid,const char *pass){
+void Guardar_Credenciales_WiFi(String ssid,String pass){
   Memoria.begin(Namespace_WiFi,false);
   Memoria.putString("ssid",ssid);
   Memoria.putString("pass",pass);
+  Serial.print("ssid: ");
+  Serial.println(Memoria.getString("ssid",""));
+  Serial.print("Pass: ");
+  Serial.println(Memoria.getString("pass",""));
   Memoria.end();
 }
 WiFi_Credentials Leer_Credenciales_WiFi(){
   WiFi_Credentials credentials;
   Memoria.begin(Namespace_WiFi,false);
-  credentials.ssid = Memoria.getString("ssid","").c_str();
-  credentials.pass = Memoria.getString("pass","").c_str();
+  credentials.ssid = Memoria.getString("ssid","");
+  credentials.pass = Memoria.getString("pass","");
+  Serial.print("ssid: ");
+  Serial.println(credentials.ssid);
+  Serial.print("Pass: ");
+  Serial.println(credentials.pass);
   Memoria.end();
   return credentials;
 }
@@ -491,7 +499,7 @@ void wifiDisconnect() {
     delay(200);
   }
 }
-void wifiConnect(const char *ssid, const char *pass) {
+void wifiConnect( String ssid, String pass) {
   int intentos = 0;
   wifiDisconnect();
 
@@ -1004,7 +1012,7 @@ bool Procesar_Lectura_Cardiaca(bool Hay_Movimiento_Alto) {
   if (Valor_Ir < 50000) {
     digitalWrite(Pin_Led_Rojo, HIGH);
     superficie = 0;
-    infoPOST(-1,-1,0,"00",0.0);//Revisar pq no agarra Dato.Superficie
+    //infoPOST(-1,-1,0,"00",0.0);//Revisar pq no agarra Dato.Superficie
     return false; // sin contacto con la piel
   }
   if (!checkForBeat(Valor_Ir)) return false;
@@ -1428,7 +1436,7 @@ void setup() {
   Serial.println(credenciales.ssid);
   Serial.println(credenciales.pass);
   if (credenciales.ssid !="" && credenciales.pass !=""){
-    wifiConnect(credenciales.ssid,credenciales.pass);
+    wifiConnect(credenciales.ssid.c_str(),credenciales.pass.c_str());
   }
   BLE_Start();  //Se llama la función que inicia el BLE
   Serial.println(F("\n--- Iniciando Wearable Estres/Sueno (FSM) ---"));
@@ -1522,7 +1530,7 @@ void loop() {
     Serial.println(credenciales.ssid);
     Serial.println(credenciales.pass);
     if (credenciales.ssid !="" && credenciales.pass !=""){
-      wifiConnect(credenciales.ssid,credenciales.pass);
+      wifiConnect(credenciales.ssid.c_str(),credenciales.pass.c_str());
     }
   }
   if (xSemaphoreTake(Mutex_I2c, pdMS_TO_TICKS(20)) == pdTRUE) {
