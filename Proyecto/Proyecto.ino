@@ -75,7 +75,8 @@ String UserToken = "";
 String User = "";
 String Token = "";
 bool superficie = 0;
-
+const char* Namespace_WiFi = "Redes";
+bool BLEapagado=true;
 // --- Infraestructura de red en segundo plano (optimización) ---
 // El formato del POST (campos y separadores ";") NO CAMBIA. Lo que cambia
 // es que ni el POST ni la conexión WiFi se ejecutan más en el loop()
@@ -90,6 +91,10 @@ struct Datos_Post {
   bool Superficie;
   char Alertas[8];
   float Fuerza_Golpe;
+};
+struct WiFi_Credentials {
+  const char* ssid;
+  const char* pass;
 };
 QueueHandle_t Cola_Post = NULL;
 TaskHandle_t Handle_Tarea_Red = NULL;
@@ -245,6 +250,7 @@ class Server_Callback : public BLEServerCallbacks {
     if (WiFi.status() == WL_CONNECTED) {
       Serial.println("Apagando BLE");
       BLEDevice::deinit(true);
+      BLEapagado=true;
     }
   }
 };
@@ -319,6 +325,7 @@ class HoraDormirChar_Callback : public BLECharacteristicCallbacks {
 //*************************
 void BLE_Start() {
   bool server_status = BLEDevice::init("ESP32 TEA");
+  BLEapagado=false;
   BLEDevice::setMTU(512);
   if (!server_status) {
     Serial.println("Error al establecer el servidor.");
@@ -423,6 +430,20 @@ void Actualizar_Reloj_Simple() {
 // ============================================================================
 // 7. FUNCIONES COMS
 // ============================================================================
+void Guardar_Credenciales_WiFi(const char *ssid,const char *pass){
+  Memoria.begin(Namespace_WiFi,false);
+  Memoria.putString("ssid",ssid);
+  Memoria.putString("pass",pass);
+  Memoria.end();
+}
+WiFi_Credentials Leer_Credenciales_WiFi(){
+  WiFi_Credentials credentials;
+  Memoria.begin(Namespace_WiFi,false);
+  credentials.ssid = Memoria.getString("ssid","").c_str();
+  credentials.pass = Memoria.getString("pass","").c_str();
+  Memoria.end();
+  return credentials;
+}
 String wifiScan() {
   Serial.println("Buscando Redes...");
   int min_rssi = -80;
@@ -494,6 +515,8 @@ void wifiConnect(const char *ssid, const char *pass) {
 
     Hora_Actual_Hhmm = getTime(publicIP);
     Serial.println(Hora_Actual_Hhmm);
+
+    Guardar_Credenciales_WiFi(ssid,pass);
   } else {
     Serial.println("Error al conectar.");
     Serial.println("La conexión tardo demasiado, vefifique la contraseña e intentelo nuevmente");
@@ -981,7 +1004,7 @@ bool Procesar_Lectura_Cardiaca(bool Hay_Movimiento_Alto) {
   if (Valor_Ir < 50000) {
     digitalWrite(Pin_Led_Rojo, HIGH);
     superficie = 0;
-    infoPOST(-1,-1,Dato.Superficie,"00",0.0);
+    infoPOST(-1,-1,0,"00",0.0);//Revisar pq no agarra Dato.Superficie
     return false; // sin contacto con la piel
   }
   if (!checkForBeat(Valor_Ir)) return false;
@@ -1401,8 +1424,13 @@ void setup() {
   digitalWrite(Pin_Motor, LOW);
 
   WiFi.mode(WIFI_STA); //Se inicia el modo Station del Wifi
+  WiFi_Credentials credenciales=Leer_Credenciales_WiFi();
+  Serial.println(credenciales.ssid);
+  Serial.println(credenciales.pass);
+  if (credenciales.ssid !="" && credenciales.pass !=""){
+    wifiConnect(credenciales.ssid,credenciales.pass);
+  }
   BLE_Start();  //Se llama la función que inicia el BLE
-
   Serial.println(F("\n--- Iniciando Wearable Estres/Sueno (FSM) ---"));
 
   // --- Mutex de FreeRTOS: se crean ANTES de tocar I2C o los sensores ---
@@ -1489,7 +1517,14 @@ void setup() {
 void loop() {
   Procesar_Comando_Serial();
   Actualizar_Reloj_Simple();
-
+  if (WiFi.status()!= WL_CONNECTED && BLEapagado == true){
+    WiFi_Credentials credenciales=Leer_Credenciales_WiFi();
+    Serial.println(credenciales.ssid);
+    Serial.println(credenciales.pass);
+    if (credenciales.ssid !="" && credenciales.pass !=""){
+      wifiConnect(credenciales.ssid,credenciales.pass);
+    }
+  }
   if (xSemaphoreTake(Mutex_I2c, pdMS_TO_TICKS(20)) == pdTRUE) {
     Sensor_Cardiaco.check();
     xSemaphoreGive(Mutex_I2c);
